@@ -3,7 +3,7 @@ Configuration for Tongyi DeepResearch Agent
 Optimized parameters based on Tongyi DeepResearch specifications
 """
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 import os
 import sys
 from dotenv import load_dotenv
@@ -12,6 +12,8 @@ load_dotenv()
 
 class TongyiConfig(BaseModel):
     """Tongyi DeepResearch model configuration"""
+    
+    model_config = ConfigDict(env_file=".env", env_prefix="TONGYI_", extra="ignore")
     
     # Model parameters
     model_name: str = "alibaba/tongyi-deepresearch-30b-a3b"
@@ -63,9 +65,7 @@ class TongyiConfig(BaseModel):
             sys.exit(1)
         return v.strip()
     
-    class Config:
-        env_file = ".env"
-        env_prefix = "TONGYI_"
+    
 
 
 class ModelRouter:
@@ -90,6 +90,8 @@ class ModelRouter:
 
 class ToolConfig(BaseModel):
     """Tool-specific configurations"""
+    
+    model_config = ConfigDict(extra="ignore")
     
     # Search tool
     search_engine: str = "google"

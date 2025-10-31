@@ -22,7 +22,7 @@ from adaptive_planner import PlanStage, build_manifest, plan_stages
 from delegation_policy import AgentBudget, DelegationPolicy
 from delegation_clients import load_openrouter_client, AgentClientError
 from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
-from code_search import CodeSearch
+from code_search import CodeSearch, SearchHit
 from file_read import read_snippet
 from verifier_gate import VerifierGate, Claim
 from sandbox_exec import run_snippet, ExecResult
@@ -207,7 +207,7 @@ class LocalOrchestrator:
     def _synthesize(self, state: LoopState) -> str:
         return f"Q: {state.question}\nReport:\n{state.report}\nLast Observation: {state.last_observation}"
 
-    def _collect_hits(self, stage: PlanStage, question: str):
+    def _collect_hits(self, stage: PlanStage, question: str) -> List[SearchHit]:
         # Limit search to manageable subset of paths for speed.
         paths = stage.paths[:200]
         return self.code_search.search(question, paths=paths, max_results=4)

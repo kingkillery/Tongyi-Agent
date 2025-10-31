@@ -34,7 +34,7 @@ class Claim:
 class VerifierGate:
     """Evidence quality control enforcing citation requirements."""
     
-    def __init__(self, tongyi_client=_NOT_PASSED):
+    def __init__(self, tongyi_client: object = _NOT_PASSED) -> None:
         self.model_router = DEFAULT_MODEL_ROUTER
         if tongyi_client is _NOT_PASSED:
             self.client = load_openrouter_client(

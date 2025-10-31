@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
+from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER, ModelRouter
 from delegation_clients import load_openrouter_client, AgentClientError
 from delegation_policy import DelegationPolicy, AgentBudget
 from verifier_gate import VerifierGate
@@ -39,7 +39,11 @@ class TongyiOrchestrator:
             raise RuntimeError("Failed to initialize OpenRouter client")
         
         # Model router to alternate between paid/free models
-        self.model_router = DEFAULT_MODEL_ROUTER
+        self.model_router = ModelRouter(
+            primary_model=DEFAULT_TONGYI_CONFIG.model_name,
+            free_model=DEFAULT_TONGYI_CONFIG.free_model_name,
+            free_interval=DEFAULT_TONGYI_CONFIG.free_call_interval,
+        )
         
         # Initialize delegation policy for budgets
         self.policy = DelegationPolicy(
