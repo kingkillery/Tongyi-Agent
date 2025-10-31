@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "paper_meta.schema.json",
+  "title": "PaperMeta",
+  "type": "object",
+  "required": ["id", "title", "authors", "source"],
+  "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "authors": {"type": "array", "items": {"type": "string"}},
+    "venue": {"type": ["string", "null"]},
+    "year": {"type": ["integer", "null"]},
+    "abstract": {"type": ["string", "null"]},
+    "doi": {"type": ["string", "null"]},
+    "url": {"type": ["string", "null"]},
+    "pdf_url": {"type": ["string", "null"]},
+    "source": {"type": "string"}
+  }
+}
+

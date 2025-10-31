@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact_blob.schema.json",
+  "title": "ArtifactBlob",
+  "type": "object",
+  "required": ["key", "size", "parser_ver"],
+  "properties": {
+    "key": {"type": "string"},
+    "url": {"type": ["string", "null"]},
+    "fetched_at": {"type": ["string", "null"]},
+    "content_type": {"type": ["string", "null"]},
+    "size": {"type": "integer", "minimum": 0},
+    "parser_ver": {"type": "string"},
+    "outlinks": {"type": ["array", "null"], "items": {"type": "string"}}
+  }
+}
+

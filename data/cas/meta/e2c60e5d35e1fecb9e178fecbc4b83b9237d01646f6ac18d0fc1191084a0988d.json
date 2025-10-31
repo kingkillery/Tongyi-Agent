@@ -1,0 +1,11 @@
+{
+  "key": "e2c60e5d35e1fecb9e178fecbc4b83b9237d01646f6ac18d0fc1191084a0988d:jina-1.0",
+  "url": "https://example.com",
+  "fetched_at": "2025-10-30T00:00:00Z",
+  "content_type": "text/plain",
+  "size": 12,
+  "parser_ver": "jina-1.0",
+  "outlinks": [
+    "https://example.com/a"
+  ]
+}

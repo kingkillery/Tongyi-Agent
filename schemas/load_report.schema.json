@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "load_report.schema.json",
+  "title": "LoadReport",
+  "type": "object",
+  "required": ["n_tasks", "concurrency", "latency_p50_ms", "latency_p95_ms", "errors", "throughput_qps"],
+  "properties": {
+    "n_tasks": {"type": "integer"},
+    "concurrency": {"type": "integer"},
+    "latency_p50_ms": {"type": "number"},
+    "latency_p95_ms": {"type": "number"},
+    "errors": {"type": "integer"},
+    "throughput_qps": {"type": "number"}
+  }
+}
+

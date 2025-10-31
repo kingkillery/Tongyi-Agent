@@ -1,0 +1,1 @@
+{"defs": {"test_symbol_index_definitions_and_usages": [11]}, "uses": {"str": [5, 6, 15, 12], "root": [5, 14, 6, 12], "sys": [5, 6], "symbolindex": [12], "paths": [16], "any": [20], "isinstance": [24], "uses": [24], "list": [24], "p": [15, 20], "idx": [16, 19, 23], "defs": [20], "path": [4, 20], "__file__": [4], "src_dir": [15]}}

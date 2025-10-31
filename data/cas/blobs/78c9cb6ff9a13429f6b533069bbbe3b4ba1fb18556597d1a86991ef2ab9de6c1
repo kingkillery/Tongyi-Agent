@@ -1,0 +1,1 @@
+{"defs": {"test_delegation_budget_enforced": [4]}, "uses": {"compressed": [8], "delegationpolicy": [5], "policy": [7, 6, 9, 10, 11], "agentbudget": [5]}}

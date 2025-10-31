@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "drift_tick.schema.json",
+  "title": "DriftTick",
+  "type": "object",
+  "required": ["step", "cosine_sim", "drift_rate", "action"],
+  "properties": {
+    "step": {"type": "integer"},
+    "cosine_sim": {"type": "number", "minimum": 0, "maximum": 1},
+    "drift_rate": {"type": "number", "minimum": 0, "maximum": 1},
+    "action": {"type": "string"}
+  }
+}
+
