@@ -1,0 +1,143 @@
+Metadata-Version: 2.4
+Name: tongyi-agent
+Version: 0.1.0
+Summary: Agentic research assistant with sandbox execution and scholar integration
+Author: Tongyi Agent Contributors
+License: MIT
+Project-URL: Homepage, https://github.com/your-org/tongyi-agent
+Project-URL: Repository, https://github.com/your-org/tongyi-agent
+Project-URL: Issues, https://github.com/your-org/tongyi-agent/issues
+Keywords: agent,research,sandbox,llm,orchestrator
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.0
+Requires-Dist: requests>=2.28
+Requires-Dist: pandas>=2.0
+Requires-Dist: markdown>=3.5
+Requires-Dist: PyYAML>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: ruff>=0.1; extra == "dev"
+
+# Tongyi Agent
+
+An agentic research assistant with sandbox execution, scholar integration, and data cleaning workhorse capabilities.
+
+## Features
+
+- **Agentic analysis**: Multi-stage planning with local code search and file reading
+- **Sandbox execution**: Isolated Python code execution with resource caps and read-only project mounts
+- **Scholar integration**: Retrieve literature from Semantic Scholar, Crossref, arXiv, and OpenAlex with fallbacks
+- **Data cleaning workhorse**: Clean CSV and markdown files safely in the sandbox
+- **Delegation budgets**: Enforce per-agent call and token limits
+- **Verification gate**: Ensure claims are backed by citations before inclusion
+
+## Installation
+
+### From source
+
+```bash
+git clone https://github.com/your-org/tongyi-agent.git
+cd tongyi-agent
+pip install -e .
+```
+
+### Using pip
+
+```bash
+pip install tongyi-agent
+```
+
+## Quick Start
+
+### Command line
+
+```bash
+# Ask a question about the current directory
+tongyi-agent "How does the sandbox enforce isolation?"
+
+# Analyze a specific project folder
+tongyi-agent "Summarize the delegation policy" --root /path/to/project
+
+# Clean a CSV file
+tongyi-agent "Please clean data.csv"
+
+# Clean a markdown dump
+tongyi-agent "Please clean daily_notes.md"
+```
+
+### Python API
+
+```python
+from src.orchestrator_local import LocalOrchestrator
+
+orch = LocalOrchestrator(root=".")
+answer = orch.run("What does the verifier gate do?")
+print(answer)
+```
+
+## Optional: External LLM Integration
+
+Set environment variables to enable the Tongyi DeepResearch delegate:
+
+```bash
+export OPENROUTER_API_KEY="your-openrouter-api-key"
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # optional
+```
+
+## Architecture
+
+- `orchestrator_local.py`: Main agentic loop with delegation
+- `sandbox_exec.py`: Docker/subprocess sandbox with resource caps
+- `scholar_adapter.py`: Multi-provider literature retrieval with rate limiting
+- `csv_utils.py`: Safe CSV schema inference and cleaning
+- `md_utils.py`: Markdown parsing and dump cleaning
+- `verifier_gate.py`: Evidence quality control with citation requirements
+- `delegation_policy.py`: Budget enforcement and metrics
+
+## Development
+
+Install development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Lint and format:
+
+```bash
+ruff check src/
+black src/
+```
+
+## Configuration
+
+Default delegation budgets (can be overridden in `LocalOrchestrator`):
+
+- `tongyi`: 3 calls, 1200 tokens
+- `small`: 2 calls, 400 tokens
+- `sandbox`: 2 calls, 600 tokens
+- `scholar`: 2 calls, 500 tokens
+- `csv_cleaner`: 2 calls, 800 tokens
+- `md_cleaner`: 2 calls, 700 tokens
+
+## License
+
+MIT

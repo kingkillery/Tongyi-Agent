@@ -1,0 +1,2 @@
+[console_scripts]
+tongyi-agent = src.orchestrator_local:cli_main

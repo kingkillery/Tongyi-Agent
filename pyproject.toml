@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tongyi-agent"
+version = "0.1.0"
+description = "Agentic research assistant with sandbox execution and scholar integration"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Tongyi Agent Contributors"}
+]
+keywords = ["agent", "research", "sandbox", "llm", "orchestrator"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "requests>=2.28",
+    "pandas>=2.0",
+    "markdown>=3.5",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/tongyi-agent"
+Repository = "https://github.com/your-org/tongyi-agent"
+Issues = "https://github.com/your-org/tongyi-agent/issues"
+
+[project.scripts]
+tongyi-agent = "tongyi_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tongyi_agent*", "src*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501"]

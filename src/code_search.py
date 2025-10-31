@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, List, Optional, Set, Tuple
 
 from symbol_index import SymbolIndex
@@ -71,6 +72,21 @@ class CodeSearch:
             if size > self.max_file_size:
                 return False
         except OSError:
+            return False
+
+        path_obj = Path(path)
+        # Skip common binary / metadata directories and extensions
+        if any(part.startswith('.git') for part in path_obj.parts):
+            return False
+        if path_obj.suffix.lower() in {'.pyc', '.pyo', '.so', '.dll', '.exe'}:
+            return False
+
+        try:
+            with open(path, 'rb') as fh:
+                chunk = fh.read(1024)
+                if b"\x00" in chunk:
+                    return False
+        except (FileNotFoundError, PermissionError, OSError):
             return False
         return True
 

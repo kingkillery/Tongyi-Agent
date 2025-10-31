@@ -3,8 +3,9 @@ Configuration for Tongyi DeepResearch Agent
 Optimized parameters based on Tongyi DeepResearch specifications
 """
 from typing import Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,7 +15,9 @@ class TongyiConfig(BaseModel):
     
     # Model parameters
     model_name: str = "alibaba/tongyi-deepresearch-30b-a3b"
-    api_key: Optional[str] = None
+    free_model_name: str = "alibaba/tongyi-deepresearch-30b-a3b:free"
+    free_call_interval: int = 3  # Use free tier every Nth call
+    api_key: str
     base_url: Optional[str] = None
     
     # Inference parameters for optimal stability
@@ -44,9 +47,46 @@ class TongyiConfig(BaseModel):
     relevance_threshold: float = 0.7
     max_concurrent_requests: int = 10
     
+    @field_validator('api_key')
+    @classmethod
+    def validate_api_key(cls, v):
+        if not v or not v.strip():
+            print("ERROR: OPENROUTER_API_KEY is required for Tongyi Agent to function.", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Setup instructions:", file=sys.stderr)
+            print("1. Get an API key from https://openrouter.ai/keys", file=sys.stderr)
+            print("2. Add to your .env file:", file=sys.stderr)
+            print("   OPENROUTER_API_KEY=your-key-here", file=sys.stderr)
+            print("   # Or set environment variable:", file=sys.stderr)
+            print("   export OPENROUTER_API_KEY='your-key-here'", file=sys.stderr)
+            print("", file=sys.stderr)
+            sys.exit(1)
+        return v.strip()
+    
     class Config:
         env_file = ".env"
         env_prefix = "TONGYI_"
+
+
+class ModelRouter:
+    """Routes requests between primary and free Tongyi models."""
+
+    def __init__(self, primary_model: str, free_model: Optional[str], free_interval: int) -> None:
+        self.primary_model = primary_model.strip()
+        self.free_model = free_model.strip() if free_model else None
+        self.free_interval = free_interval if free_interval and free_interval > 0 else 0
+        self._counter = 0
+
+    def next_model(self) -> str:
+        """Return the model to use for the next call, alternating per interval."""
+        self._counter += 1
+        if self.free_model and self.free_interval and self._counter % self.free_interval == 0:
+            return self.free_model
+        return self.primary_model
+
+    def reset(self) -> None:
+        """Reset the router counter (useful for testing)."""
+        self._counter = 0
 
 class ToolConfig(BaseModel):
     """Tool-specific configurations"""
@@ -83,6 +123,13 @@ DEFAULT_TONGYI_CONFIG = TongyiConfig(
 )
 
 DEFAULT_TOOL_CONFIG = ToolConfig()
+
+# Default model router for alternating between paid and free models
+DEFAULT_MODEL_ROUTER = ModelRouter(
+    primary_model=DEFAULT_TONGYI_CONFIG.model_name,
+    free_model=DEFAULT_TONGYI_CONFIG.free_model_name,
+    free_interval=DEFAULT_TONGYI_CONFIG.free_call_interval,
+)
 
 def get_config() -> Dict[str, Any]:
     """Get combined configuration dictionary"""

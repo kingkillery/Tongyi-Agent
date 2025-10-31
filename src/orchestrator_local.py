@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 from adaptive_planner import PlanStage, build_manifest, plan_stages
 from delegation_policy import AgentBudget, DelegationPolicy
 from delegation_clients import load_openrouter_client, AgentClientError
-from config import DEFAULT_TONGYI_CONFIG
+from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
 from code_search import CodeSearch
 from file_read import read_snippet
 from verifier_gate import VerifierGate, Claim
@@ -96,6 +96,9 @@ class LocalOrchestrator:
             state.last_observation = f"Manifest scanned: {len(self.manifest)} files"
         else:
             hits = self._collect_hits(stage, state.question)
+            if not hits:
+                # Fallback to repository-wide search so verification can still attach citations
+                hits = self.code_search.search(state.question, max_results=4)
             if hits:
                 observation_lines = []
                 for hit in hits:
@@ -365,11 +368,12 @@ print({{'info': info.__dict__, 'steps': steps, 'result': result}})
             base_url=DEFAULT_TONGYI_CONFIG.base_url,
         )
         if client:
+            router = DEFAULT_MODEL_ROUTER
             def _call_tongyi(prompt: str) -> str:
                 try:
                     return client.chat(
                         prompt,
-                        model=DEFAULT_TONGYI_CONFIG.model_name,
+                        model=router.next_model(),
                         temperature=DEFAULT_TONGYI_CONFIG.temperature,
                         top_p=DEFAULT_TONGYI_CONFIG.top_p,
                         repetition_penalty=DEFAULT_TONGYI_CONFIG.repetition_penalty,
@@ -385,7 +389,17 @@ print({{'info': info.__dict__, 'steps': steps, 'result': result}})
         return handlers
 
 
+def cli_main():
+    """Entry point for tongyi-agent CLI."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Run Tongyi Agent research assistant")
+    parser.add_argument("question", nargs="*", help="Question to process")
+    parser.add_argument("--root", default=".", help="Root directory to analyze")
+    args = parser.parse_args()
+    question = " ".join(args.question) if args.question else input("Question: ")
+    orch = LocalOrchestrator(root=args.root)
+    print(orch.run(question))
+
+
 if __name__ == "__main__":
-    orchestrator = LocalOrchestrator()
-    answer = orchestrator.run("How is delegation budget enforced?")
-    print(answer)
+    cli_main()

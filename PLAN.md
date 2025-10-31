@@ -14,8 +14,9 @@ Scope: Repository‑wide delivery plan. Keep this document short and current. Up
 - AGENTS.md updated with verification workflow and SymbolIndex (2025-10-30).
 - Risk triage completed (2025-10-31); prioritizing high-effort controls H1–H2 next.
 - Local orchestrator wired to adaptive planner, delegation policy, CodeSearch/FileRead tools, and OpenRouter client (optional via `OPENROUTER_API_KEY`).
-- VerifierGate implemented and integrated into orchestrator; verifies observations and appends citations when validated.
-- CodeSearch enhanced with AST-based SymbolIndex for definitions/usages.
+- VerifierGate constructor hardened with sentinel-based client handling; fallback validation now deterministic for tests (2025-10-31).
+- CodeSearch now skips VCS/binary blobs when collecting evidence, preventing noisy citations (2025-10-31).
+- Local orchestrator falls back to repo-wide search when stage hits are empty so verification can still cite evidence (2025-10-31).
 - Evaluation harness added: JSONL fixtures and pytest checks for citation enforcement.
 
 ## Workstreams

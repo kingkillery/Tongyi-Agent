@@ -2,14 +2,14 @@
 
 Scope: Entire repository. This file defines conventions, patterns, and guardrails for agents and humans working on this codebase. Keep outputs terse; prefer structure over prose. Optimize for token and time efficiency.
 
-> Roadmap: See `PLAN.md` for current milestones and workstreams. When you land meaningful changes (interfaces, dependencies, or targets), update `PLAN.md` and reference your change briefly in this file if it affects operating heuristics.
+> Roadmap & TODOs live in `PLAN.md`. Update that file (not @todo.md) when interfaces, dependencies, or targets change, then reflect any operating guidance deltas here.
 
-- `src/orchestrator_local.py`: Minimal Markov loop consuming planner stages + delegation policy.
+- `src/orchestrator_local.py`: Minimal Markov loop consuming planner stages + delegation policy; falls back to repo-wide search when stage hits are empty so verification can still cite evidence.
 - `src/adaptive_planner.py`: Manifest builder and tiered stage planner with concurrency caps.
 - `src/delegation_policy.py`: Delegation budgets, compression, and metrics for delegate tool.
 - `src/delegation_clients.py`: OpenRouter client helper (uses `OPENROUTER_API_KEY`).
-- `src/verifier_gate.py`: Evidence quality control enforcing citation requirements.
-- `src/code_search.py`: Local search (term matching) with file-size guardrails; enhanced with `SymbolIndex`.
+- `src/verifier_gate.py`: Evidence quality control enforcing citation requirements (constructor now uses sentinel to respect explicit `None` clients; fallback validation deterministic for tests).
+- `src/code_search.py`: Local search (term matching) with file-size guardrails; enhanced with `SymbolIndex`; skips VCS/binary blobs to keep evidence clean.
 - `src/symbol_index.py`: AST-based symbol indexer for Python definitions/usages (def+use evidence).
 - `src/file_read.py`: Snippet extractor with line context helpers.
 - `src/scholar_adapter.py`: Scholar tool scaffold with provider fallbacks, retries, rate limiting.

@@ -16,7 +16,10 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from delegation_clients import load_openrouter_client, AgentClientError
-from config import DEFAULT_TONGYI_CONFIG
+from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
+
+
+_NOT_PASSED = object()
 
 
 @dataclass
@@ -29,14 +32,11 @@ class Claim:
 
 
 class VerifierGate:
-    """Enforces evidence quality rules before claims enter R_t."""
-
-    def __init__(self, tongyi_client: object = "auto"):
-        # tongyi_client semantics:
-        #   - "auto" (default): load from env/config
-        #   - None: disable LLM validation (fallback mode)
-        #   - object: use provided client
-        if tongyi_client == "auto":
+    """Evidence quality control enforcing citation requirements."""
+    
+    def __init__(self, tongyi_client=_NOT_PASSED):
+        self.model_router = DEFAULT_MODEL_ROUTER
+        if tongyi_client is _NOT_PASSED:
             self.client = load_openrouter_client(
                 api_key=DEFAULT_TONGYI_CONFIG.api_key,
                 base_url=DEFAULT_TONGYI_CONFIG.base_url,
@@ -115,7 +115,7 @@ class VerifierGate:
         """Use Tongyi's built-in reasoning to validate claim support."""
         try:
             # Use configured model; fall back to working model if Tongyi fails
-            model_to_use = DEFAULT_TONGYI_CONFIG.model_name
+            model_to_use = self.model_router.next_model()
             
             prompt = f"""You must respond with ONLY the word YES or ONLY the word NO.
 
