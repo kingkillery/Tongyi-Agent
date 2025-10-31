@@ -19,6 +19,7 @@ from delegation_clients import load_openrouter_client, AgentClientError
 from delegation_policy import DelegationPolicy, AgentBudget
 from verifier_gate import VerifierGate
 from tool_registry import ToolRegistry, ToolCall, ToolResult
+from react_parser import ReActParser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,14 +38,17 @@ class TongyiOrchestrator:
         )
         if not self.client:
             raise RuntimeError("Failed to initialize OpenRouter client")
-        
+
+        # Initialize ReAct parser for natural-language tool call parsing
+        self.react_parser = ReActParser()
+
         # Model router to alternate between paid/free models
         self.model_router = ModelRouter(
             primary_model=DEFAULT_TONGYI_CONFIG.model_name,
             free_model=DEFAULT_TONGYI_CONFIG.free_model_name,
             free_interval=DEFAULT_TONGYI_CONFIG.free_call_interval,
         )
-        
+
         # Initialize delegation policy for budgets
         self.policy = DelegationPolicy(
             agent_budgets={
@@ -228,6 +232,56 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     messages.append({"role": "user", "content": tool_response})
                     continue
             except (json.JSONDecodeError, TypeError):
+                # Try ReAct-style natural language parsing (fallback)
+                react_blocks = self.react_parser.parse_response(response)
+                if react_blocks and any(block.action for block in react_blocks):
+                    logger.info(f"ReAct blocks detected, processing {len(react_blocks)} blocks")
+                    blocks_executed = False
+
+                    for block in react_blocks:
+                        if not block.action or not block.action_input:
+                            continue
+
+                        tool_name = block.action
+                        parameters = block.action_input
+
+                        # Check budget
+                        if not self.policy.allow(tool_name):
+                            error_msg = f"Tool {tool_name} budget exceeded"
+                            logger.warning(error_msg)
+                            messages.append({"role": "user", "content": error_msg})
+                            continue
+
+                        # Execute tool
+                        call = ToolCall(name=tool_name, parameters=parameters)
+                        tool_start = time.time()
+                        result = self.tools.execute_tool(call)
+                        tool_duration = time.time() - tool_start
+
+                        # Log tool execution
+                        tool_calls_made.append({
+                            "tool": tool_name,
+                            "parameters": parameters,
+                            "duration_ms": tool_duration * 1000,
+                            "success": result.error is None
+                        })
+                        logger.info(f"Tool {tool_name} executed in {tool_duration:.2f}s (via ReAct)")
+                        blocks_executed = True
+
+                        # Add tool result to conversation
+                        if result.error:
+                            tool_response = f"Error: {result.error}"
+                            logger.warning(f"Tool {tool_name} failed: {result.error}")
+                        else:
+                            tool_response = json.dumps(result.result, indent=2)
+
+                        # Format as ReAct observation
+                        formatted_observation = self.react_parser.format_observation(tool_response, tool_name)
+                        messages.append({"role": "user", "content": formatted_observation})
+
+                    if blocks_executed:
+                        continue
+
                 # Not a tool call, this is the final answer
                 logger.info(f"Final answer received after {iteration-1} tool calls")
                 

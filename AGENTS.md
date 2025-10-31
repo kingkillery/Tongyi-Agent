@@ -2,14 +2,19 @@
 
 Scope: Entire repository. This file defines conventions, patterns, and guardrails for agents and humans working on this codebase. Keep outputs terse; prefer structure over prose. Optimize for token and time efficiency.
 
-> Roadmap & TODOs live in `PLAN.md`. Update that file (not @todo.md) when interfaces, dependencies, or targets change, then reflect any operating guidance deltas here.
+- Roadmap & TODOs live in `PLAN.md`. Update that file (not @todo.md) when interfaces, dependencies, or targets change, then reflect any operating guidance deltas here.
 
-- `src/orchestrator_local.py`: Minimal Markov loop consuming planner stages + delegation policy; falls back to repo-wide search when stage hits are empty so verification can still cite evidence.
+- ReAct migration (2025-10-31): staged orchestrator is being replaced by a model-driven loop. System prompt advertises tools; the model emits `<tool_call>` blocks; orchestrator parses, executes, and feeds `<tool_response>` back until `<answer>` terminates. CodeSearch remains available but no longer drives the flow.
+
+- ReAct entrypoint (`src/tongyi_orchestrator.py`): **[INTEGRATED]** Uses `ReActParser` to support natural-language Thought/Action/Observation blocks alongside structured JSON tool calls. Dispatch chain: OpenRouter `tool_calls` → JSON fallback (`{"tool": ..., "parameters": ...}`) → ReAct natural-language parsing. All routes execute via `tool_registry` and enforce `delegation_policy` budgets.
+  - Natural-language ReAct responses are normalized via `src/react_parser.py` during dispatch (lines 235–283 in `tongyi_orchestrator.py`); parser extracts Thought/Action/Observation blocks and JSON tool calls with consistent parameter binding.
+- Legacy staged loop slated for removal after ReAct stabilization; keep Markov state (Q, R_t, O_t) and compression discipline in new executor.
 - `src/adaptive_planner.py`: Manifest builder and tiered stage planner with concurrency caps.
 - `src/delegation_policy.py`: Delegation budgets, compression, and metrics for delegate tool.
 - `src/delegation_clients.py`: OpenRouter client helper (uses `OPENROUTER_API_KEY`).
 - `src/verifier_gate.py`: Evidence quality control enforcing citation requirements (constructor now uses sentinel to respect explicit `None` clients; fallback validation deterministic for tests).
-- `src/code_search.py`: Local search (term matching) with file-size guardrails; enhanced with `SymbolIndex`; skips VCS/binary blobs to keep evidence clean.
+- `src/code_search.py`: Optional local evidence tool; still provides def/use citations but no longer gatekeeps search. Expose via `tool_registry` so the model can request targeted local scans.
+- `src/data_iterator.py`: Dataset refinement loop that pairs CAS-backed caching with VerifierGate checks; use for slow, high-quality DeepResearch dataset generation.
 - `src/symbol_index.py`: AST-based symbol indexer for Python definitions/usages (def+use evidence).
 - `src/file_read.py`: Snippet extractor with line context helpers.
 - `src/scholar_adapter.py`: Scholar tool scaffold with provider fallbacks, retries, rate limiting.
