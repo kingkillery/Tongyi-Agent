@@ -1,9 +1,10 @@
-# Tongyi Agent
+# Tongyi CLI Interactive
 
-An agentic research assistant powered by Tongyi DeepResearch with sandbox execution, scholar integration, and data cleaning workhorse capabilities.
+A modern interactive CLI for Tongyi Agent with rich terminal interface, session management, and tool integration.
 
 ## Features
 
+- **🤖 Interactive CLI**: Modern terminal interface with rich UI, session management, and command system
 - **Tongyi DeepResearch Core**: Advanced reasoning via Alibaba's Tongyi DeepResearch model
 - **Local-First Approach**: Searches project files first, external sources only when needed
 - **Tool-Based Architecture**: Structured function calling for reliable, predictable behavior
@@ -33,29 +34,47 @@ pip install -e .
 ### Using pip
 
 ```bash
-pip install tongyi-agent
+pip install tongyi-cli-interactive
 # Then create .env file with OPENROUTER_API_KEY
 ```
 
 ## Quick Start
 
+### Interactive CLI (Recommended)
+
+Start the interactive terminal session:
+
+```bash
+# Launch interactive mode
+tongyi-cli
+
+# Or run from source
+python src/tongyi_agent/cli.py
+```
+
+Once in interactive mode, you can:
+- Ask questions naturally
+- Use commands like `help`, `tools`, `history`, `status`
+- View conversation history and context
+- Get rich, formatted responses
+
 ### Command line
 
 ```bash
 # Ask a question about the current directory
-tongyi-agent "How does the sandbox enforce isolation?"
+tongyi-cli "How does the sandbox enforce isolation?"
 
 # Analyze a specific project folder
-tongyi-agent "Summarize the delegation policy" --root /path/to/project
+tongyi-cli "Summarize the delegation policy" --root /path/to/project
 
 # Clean a CSV file
-tongyi-agent "Please clean data.csv"
+tongyi-cli "Please clean data.csv"
 
 # Clean a markdown dump
-tongyi-agent "Please clean daily_notes.md"
+tongyi-cli "Please clean daily_notes.md"
 
 # Show available tools
-tongyi-agent --tools
+tongyi-cli --tools
 ```
 
 ### Python API
@@ -124,3 +143,7 @@ black src/
 ## License
 
 MIT
+
+## CLI Guide
+
+For detailed information about the interactive CLI features, commands, and configuration, see [CLI_GUIDE.md](CLI_GUIDE.md).

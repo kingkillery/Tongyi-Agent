@@ -3,26 +3,30 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tongyi-agent"
+name = "tongyi-cli-interactive"
 version = "0.1.0"
-description = "Agentic research assistant with sandbox execution and scholar integration"
+description = "Interactive CLI for Tongyi Agent - Modern terminal interface with rich UI, session management, and tool integration"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Tongyi Agent Contributors"}
+    {name = "Tongyi CLI Contributors"}
 ]
-keywords = ["agent", "research", "sandbox", "llm", "orchestrator"]
+keywords = ["cli", "interactive", "tongyi", "agent", "research", "assistant", "terminal", "ui"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Shells",
+    "Topic :: Terminals",
 ]
 dependencies = [
     "pydantic>=2.0",
@@ -30,6 +34,7 @@ dependencies = [
     "pandas>=2.0",
     "markdown>=3.5",
     "PyYAML>=6.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -41,12 +46,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/tongyi-agent"
-Repository = "https://github.com/your-org/tongyi-agent"
-Issues = "https://github.com/your-org/tongyi-agent/issues"
+Homepage = "https://github.com/your-org/tongyi-cli-interactive"
+Repository = "https://github.com/your-org/tongyi-cli-interactive"
+Issues = "https://github.com/your-org/tongyi-cli-interactive/issues"
+Documentation = "https://github.com/your-org/tongyi-cli-interactive/blob/main/CLI_GUIDE.md"
 
 [project.scripts]
-tongyi-agent = "tongyi_agent.cli:main"
+tongyi-cli = "tongyi_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
