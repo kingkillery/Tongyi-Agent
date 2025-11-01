@@ -15,4 +15,4 @@ exclude .gitignore
 exclude data/
 exclude tests/
 exclude .claude/
-exclude *.egg-info/
+exclude src/tongyi_agent/cli_backup.py

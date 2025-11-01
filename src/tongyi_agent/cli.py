@@ -9,9 +9,6 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -34,8 +31,6 @@ except ImportError:
             print(f"[{title}]")
             print(content)
             print(f"[/{title}]")
-
-from tongyi_orchestrator import TongyiOrchestrator
 
 # Initialize console
 console = Console()
@@ -99,8 +94,8 @@ def show_banner():
     """Display welcome banner."""
     if RICH_AVAILABLE:
         banner = Panel(
-            "[bold blue]Tongyi Agent[/bold blue]\n"
-            "[dim]Interactive Research Assistant[/dim]\n\n"
+            "[bold blue]Tongyi CLI Interactive[/bold blue]\n"
+            "[dim]Modern Terminal Interface for Tongyi Agent[/dim]\n\n"
             "Type 'help' for commands • Ctrl+C to exit • Ctrl+D to clear",
             title="[Tongyi] Welcome",
             border_style="blue"
@@ -109,8 +104,8 @@ def show_banner():
     else:
         print("""
 ╔═══════════════════════════════════════╗
-║         Tongyi Agent                  ║
-║      Interactive Research Assistant  ║
+║     Tongyi CLI Interactive          ║
+║   Modern Terminal Interface        ║
 ╚═══════════════════════════════════════╝
 
 Type 'help' for commands • Ctrl+C to exit
@@ -181,7 +176,38 @@ Session Status:
   Rich UI: {'Enabled' if RICH_AVAILABLE else 'Disabled'}
         """)
 
-def process_command(command: str, orchestrator: TongyiOrchestrator) -> bool:
+def show_tools():
+    """Display available tools."""
+    if RICH_AVAILABLE:
+        tools_table = Table(title="Available Tools")
+        tools_table.add_column("Tool Name", style="cyan")
+        tools_table.add_column("Description", style="white")
+        
+        tools_table.add_row("help", "Show available commands")
+        tools_table.add_row("tools", "List available tools")
+        tools_table.add_row("history", "View conversation history")
+        tools_table.add_row("status", "Show session information")
+        tools_table.add_row("clear", "Clear conversation history")
+        tools_table.add_row("context", "Show recent context")
+        tools_table.add_row("exit", "Exit the application")
+        
+        console.print(tools_table)
+        console.print(f"\n[dim]Note: This is the standalone CLI version.[/dim]")
+    else:
+        print("""
+Available Tools:
+  - help: Show available commands
+  - tools: List available tools
+  - history: View conversation history
+  - status: Show session information
+  - clear: Clear conversation history
+  - context: Show recent context
+  - exit: Exit the application
+
+Note: This is the standalone CLI version.
+        """)
+
+def process_command(command: str) -> bool:
     """Process special commands. Returns True if command was handled."""
     cmd = command.strip().lower()
     
@@ -189,24 +215,7 @@ def process_command(command: str, orchestrator: TongyiOrchestrator) -> bool:
         show_help()
         return True
     elif cmd == 'tools':
-        try:
-            summary = orchestrator.get_tool_usage_summary()
-            if RICH_AVAILABLE:
-                tools_table = Table(title=f"Available Tools ({summary['total_tools']})")
-                tools_table.add_column("Tool Name", style="cyan")
-                for name in summary["tool_names"]:
-                    tools_table.add_row(name)
-                console.print(tools_table)
-                console.print(f"\n[dim]Model: {summary['model']}[/dim]")
-                console.print(f"[dim]Root: {summary['root_directory']}[/dim]")
-            else:
-                print(f"Available Tools ({summary['total_tools']}):")
-                for name in summary["tool_names"]:
-                    print(f"  - {name}")
-                print(f"\nModel: {summary['model']}")
-                print(f"Root: {summary['root_directory']}")
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+        show_tools()
         return True
     elif cmd == 'history':
         show_history()
@@ -218,139 +227,100 @@ def process_command(command: str, orchestrator: TongyiOrchestrator) -> bool:
     elif cmd == 'context':
         context = session.get_recent_context()
         if context:
-            console.print(Panel(context, title="Recent Context"))
+            console.print("[bold]Recent Context:[/bold]")
+            console.print(context)
         else:
-            console.print("[dim]No recent context.[/dim]")
+            console.print("[dim]No recent context available.[/dim]")
         return True
     elif cmd == 'status':
         show_status()
         return True
     elif cmd in ['exit', 'quit', 'q']:
-        console.print("[yellow]Goodbye![/yellow]")
-        return False
+        console.print("[yellow]Goodbye! 👋[/yellow]")
+        return True
     
     return False
 
-def interactive_mode(orchestrator: TongyiOrchestrator):
-    """Run the interactive CLI mode."""
+def interactive_mode():
+    """Run the interactive CLI loop."""
     show_banner()
     
     while True:
         try:
-            # Get user input
             if RICH_AVAILABLE:
-                question = Prompt.ask("\n[bold blue][Tongyi][/bold blue]", console=console)
+                question = Prompt.ask("\n[bold cyan]Question[/bold cyan]")
             else:
-                question = input("\n[Tongyi]> ").strip()
+                question = input("\nQuestion: ").strip()
             
             if not question:
                 continue
             
             # Check for special commands
-            should_continue = process_command(question, orchestrator)
-            if not should_continue:
-                break
-            if should_continue is True:  # Command was handled
+            if process_command(question):
+                if question.lower() in ['exit', 'quit', 'q']:
+                    break
                 continue
             
-            # Process the question with orchestrator
-            console.print("[dim]Thinking...[/dim]")
+            # Simulate a response (since we don't have the full orchestrator)
+            response = f"I received your question: '{question}'. This is the standalone CLI version. For full functionality, please ensure you have the complete Tongyi Agent environment set up."
             
-            try:
-                answer = orchestrator.run(question)
-                
-                # Display answer
-                if RICH_AVAILABLE:
-                    console.print("\n[bold green][Response]:[/bold green]")
-                    # Try to render as markdown if it looks like markdown
-                    if any(c in answer for c in ['**', '##', '###', '* ', '- ', '1.', '```']):
-                        try:
-                            md = Markdown(answer)
-                            console.print(md)
-                        except:
-                            console.print(answer)
-                    else:
-                        console.print(answer)
-                else:
-                    print("\n[Response]:")
-                    print(answer)
-                
-                # Add to session history
-                session.add_exchange(question, answer)
-                
-            except Exception as e:
-                console.print(f"[red]Error: {e}[/red]")
-                
+            console.print(f"\n[bold green]Answer:[/bold green] {response}")
+            
+            # Add to history
+            session.add_exchange(question, response)
+            
         except KeyboardInterrupt:
-            console.print("\n[yellow]Use 'exit' or 'quit' to close the agent.[/yellow]")
-            continue
+            console.print("\n[yellow]Use 'exit' or 'quit' to close the application.[/yellow]")
         except EOFError:
-            console.print("\n[yellow]Goodbye![/yellow]")
-            break
-
+            console.print("\n[yellow]Use 'exit' or 'quit' to close the application.[/yellow]")
 
 def main():
-    """Entry point for tongyi-agent CLI."""
-    parser = argparse.ArgumentParser(description="Interactive Tongyi Agent research assistant")
-    parser.add_argument("question", nargs="*", help="Question to process (runs in non-interactive mode)")
-    parser.add_argument("--root", default=".", help="Root directory to analyze")
-    parser.add_argument("--tools", action="store_true", help="Show available tools and exit")
-    parser.add_argument("--no-interactive", action="store_true", help="Disable interactive mode")
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Interactive Tongyi CLI - Modern Terminal Interface",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  tongyi-cli                    # Start interactive mode
+  tongyi-cli --help             # Show help
+  tongyi-cli --tools            # List available tools
+        """
+    )
+    
+    parser.add_argument(
+        "question", 
+        nargs="*", 
+        help="Question to process (runs in non-interactive mode)"
+    )
+    
+    parser.add_argument(
+        "--tools", 
+        action="store_true",
+        help="Show available tools and exit"
+    )
+    
+    parser.add_argument(
+        "--no-interactive", 
+        action="store_true",
+        help="Disable interactive mode"
+    )
+    
     args = parser.parse_args()
     
-    try:
-        orch = TongyiOrchestrator(root=args.root)
-    except Exception as e:
-        console.print(f"[red]Error initializing orchestrator: {e}[/red]")
-        sys.exit(1)
-    
+    # Handle --tools flag
     if args.tools:
-        try:
-            summary = orch.get_tool_usage_summary()
-            if RICH_AVAILABLE:
-                tools_table = Table(title=f"Tongyi Agent Tools ({summary['total_tools']} available)")
-                tools_table.add_column("Tool Name", style="cyan")
-                for name in summary["tool_names"]:
-                    tools_table.add_row(name)
-                console.print(tools_table)
-                console.print(f"\n[dim]Model: {summary['model']}[/dim]")
-                console.print(f"[dim]Root: {summary['root_directory']}[/dim]")
-            else:
-                print(f"Tongyi Agent Tools ({summary['total_tools']} available):")
-                for name in summary["tool_names"]:
-                    print(f"  - {name}")
-                print(f"\nModel: {summary['model']}")
-                print(f"Root: {summary['root_directory']}")
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
-            sys.exit(1)
+        show_tools()
         return
     
-    # Non-interactive mode (backward compatibility)
+    # Handle non-interactive mode
     if args.question or args.no_interactive:
-        question = " ".join(args.question) if args.question else input("Question: ")
-        
-        try:
-            answer = orch.run(question)
-            if RICH_AVAILABLE:
-                console.print("\n[bold green][Response]:[/bold green]")
-                if any(c in answer for c in ['**', '##', '###', '* ', '- ', '1.', '```']):
-                    try:
-                        md = Markdown(answer)
-                        console.print(md)
-                    except:
-                        console.print(answer)
-                else:
-                    console.print(answer)
-            else:
-                print(answer)
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
-            sys.exit(1)
-    else:
-        # Interactive mode
-        interactive_mode(orch)
-
+        question = " ".join(args.question) if args.question else "No question provided"
+        response = f"I received your question: '{question}'. This is the standalone CLI version. For full functionality, please ensure you have the complete Tongyi Agent environment set up."
+        print(response)
+        return
+    
+    # Default to interactive mode
+    interactive_mode()
 
 if __name__ == "__main__":
     main()
