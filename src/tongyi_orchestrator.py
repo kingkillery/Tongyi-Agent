@@ -130,7 +130,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
                 ]
                 
                 response = self.client.chat(
-                    "\n".join([msg["content"] for msg in messages]),
+                    messages,  # Pass full messages array for multi-turn conversation
                     model=self.model_router.next_model(),
                     temperature=DEFAULT_TONGYI_CONFIG.temperature,
                     top_p=DEFAULT_TONGYI_CONFIG.top_p,
@@ -193,8 +193,9 @@ Terminate the reasoning loop only after all necessary information is gathered an
                 continue
             
             # Check if response is a simple JSON tool call (fallback)
+            response_text = str(response).strip()
             try:
-                tool_call = json.loads(response.strip())
+                tool_call = json.loads(response_text)
                 if isinstance(tool_call, dict) and "tool" in tool_call:
                     tool_name = tool_call["tool"]
                     parameters = tool_call.get("parameters", {})
@@ -228,12 +229,12 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     else:
                         tool_response = f"Tool {tool_name} returned: {json.dumps(result.result, indent=2)}"
                     
-                    messages.append({"role": "assistant", "content": response})
+                    messages.append({"role": "assistant", "content": response_text})
                     messages.append({"role": "user", "content": tool_response})
                     continue
             except (json.JSONDecodeError, TypeError):
                 # Try ReAct-style natural language parsing (fallback)
-                react_blocks = self.react_parser.parse_response(response)
+                react_blocks = self.react_parser.parse_response(response_text)
                 if react_blocks and any(block.action for block in react_blocks):
                     logger.info(f"ReAct blocks detected, processing {len(react_blocks)} blocks")
                     blocks_executed = False
@@ -286,7 +287,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
                 logger.info(f"Final answer received after {iteration-1} tool calls")
                 
                 # Extract claims and verify them
-                verified_response = self._verify_response(response, tool_calls_made)
+                verified_response = self._verify_response(response_text, tool_calls_made)
                 
                 # Log execution summary
                 total_duration = time.time() - start_time
@@ -297,7 +298,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
             # If we get here, something went wrong with tool parsing
             if iteration == max_iterations:
                 logger.warning(f"Reached maximum iterations ({max_iterations})")
-                return response + "\n\n[Note: Reached maximum tool iterations]"
+                return response_text + "\n\n[Note: Reached maximum tool iterations]"
         
         logger.error("Maximum iterations reached without final answer")
         return "Error: Maximum iterations reached without final answer"

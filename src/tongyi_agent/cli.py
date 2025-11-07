@@ -9,6 +9,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__))))
+
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -31,6 +34,14 @@ except ImportError:
             print(f"[{title}]")
             print(content)
             print(f"[/{title}]")
+
+# Import TongyiOrchestrator
+try:
+    from tongyi_orchestrator import TongyiOrchestrator
+    ORCHESTRATOR_AVAILABLE = True
+except ImportError as e:
+    ORCHESTRATOR_AVAILABLE = False
+    ORCHESTRATOR_ERROR = str(e)
 
 # Initialize console
 console = Console()
@@ -241,9 +252,22 @@ def process_command(command: str) -> bool:
     
     return False
 
-def interactive_mode():
+def interactive_mode(root: str = "."):
     """Run the interactive CLI loop."""
     show_banner()
+    
+    # Initialize orchestrator
+    orchestrator = None
+    if ORCHESTRATOR_AVAILABLE:
+        try:
+            orchestrator = TongyiOrchestrator(root=root)
+            console.print("[green]✓ Tongyi Agent initialized successfully[/green]")
+        except Exception as e:
+            console.print(f"[red]✗ Failed to initialize Tongyi Agent: {e}[/red]")
+            console.print("[yellow]Running in limited mode with stub responses.[/yellow]")
+    else:
+        console.print(f"[red]✗ TongyiOrchestrator not available: {ORCHESTRATOR_ERROR}[/red]")
+        console.print("[yellow]Running in limited mode with stub responses.[/yellow]")
     
     while True:
         try:
@@ -261,13 +285,34 @@ def interactive_mode():
                     break
                 continue
             
-            # Simulate a response (since we don't have the full orchestrator)
-            response = f"I received your question: '{question}'. This is the standalone CLI version. For full functionality, please ensure you have the complete Tongyi Agent environment set up."
-            
-            console.print(f"\n[bold green]Answer:[/bold green] {response}")
-            
-            # Add to history
-            session.add_exchange(question, response)
+            # Process with orchestrator or stub
+            if orchestrator:
+                try:
+                    if RICH_AVAILABLE:
+                        with Live(Spinner("dots", text="[cyan]Thinking...[/cyan]"), console=console):
+                            response = orchestrator.run(question)
+                    else:
+                        print("Thinking...")
+                        response = orchestrator.run(question)
+                    
+                    console.print(f"\n[bold green]Answer:[/bold green]")
+                    if RICH_AVAILABLE:
+                        console.print(Markdown(response))
+                    else:
+                        console.print(response)
+                    
+                    # Add to history
+                    session.add_exchange(question, response)
+                    
+                except Exception as e:
+                    console.print(f"[red]Error processing question: {e}[/red]")
+                    import traceback
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            else:
+                # Stub response
+                response = f"I received your question: '{question}'. TongyiOrchestrator is not available. Please check your environment setup."
+                console.print(f"\n[bold yellow]Stub Response:[/bold yellow] {response}")
+                session.add_exchange(question, response)
             
         except KeyboardInterrupt:
             console.print("\n[yellow]Use 'exit' or 'quit' to close the application.[/yellow]")
@@ -281,9 +326,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  tongyi-cli                    # Start interactive mode
-  tongyi-cli --help             # Show help
-  tongyi-cli --tools            # List available tools
+  tongyi-cli                              # Start interactive mode
+  tongyi-cli "What is this project?"     # Ask a question directly
+  tongyi-cli --root /path/to/project     # Specify project root
+  tongyi-cli --tools                      # List available tools
         """
     )
     
@@ -291,6 +337,12 @@ Examples:
         "question", 
         nargs="*", 
         help="Question to process (runs in non-interactive mode)"
+    )
+    
+    parser.add_argument(
+        "--root",
+        default=".",
+        help="Project root directory (default: current directory)"
     )
     
     parser.add_argument(
@@ -315,12 +367,24 @@ Examples:
     # Handle non-interactive mode
     if args.question or args.no_interactive:
         question = " ".join(args.question) if args.question else "No question provided"
-        response = f"I received your question: '{question}'. This is the standalone CLI version. For full functionality, please ensure you have the complete Tongyi Agent environment set up."
-        print(response)
+        
+        if ORCHESTRATOR_AVAILABLE:
+            try:
+                orchestrator = TongyiOrchestrator(root=args.root)
+                print("Processing your question...")
+                response = orchestrator.run(question)
+                print(f"\nAnswer:\n{response}")
+            except Exception as e:
+                print(f"Error: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"TongyiOrchestrator not available: {ORCHESTRATOR_ERROR}")
+            print(f"Received question: '{question}'")
         return
     
     # Default to interactive mode
-    interactive_mode()
+    interactive_mode(root=args.root)
 
 if __name__ == "__main__":
     main()
