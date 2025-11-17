@@ -15,9 +15,9 @@ def test_pdf_tools():
     # Test PDF processor initialization
     try:
         processor = get_pdf_processor()
-        print("✓ PDF processor initialized successfully")
+        print("SUCCESS: PDF processor initialized successfully")
     except Exception as e:
-        print(f"✗ Failed to initialize PDF processor: {e}")
+        print(f"FAILED: Failed to initialize PDF processor: {e}")
         return False
 
     # Test tool registry integration
@@ -27,12 +27,12 @@ def test_pdf_tools():
         tools = registry.get_tools()
 
         pdf_tools = [tool for tool in tools if tool.name.startswith('pdf_')]
-        print(f"✓ Found {len(pdf_tools)} PDF tools in registry:")
+        print(f"SUCCESS: Found {len(pdf_tools)} PDF tools in registry:")
         for tool in pdf_tools:
             print(f"  - {tool.name}: {tool.description}")
 
     except Exception as e:
-        print(f"✗ Failed to test tool registry: {e}")
+        print(f"FAILED: Failed to test tool registry: {e}")
         return False
 
     # Test tool execution (with dummy parameters)
@@ -44,15 +44,15 @@ def test_pdf_tools():
         result = registry.execute_tool(info_call)
 
         if result.error:
-            print(f"✓ PDF info tool handles missing file correctly: {result.error}")
+            print(f"SUCCESS: PDF info tool handles missing file correctly: {result.error}")
         else:
-            print("✗ PDF info tool should have failed for missing file")
+            print("FAILED: PDF info tool should have failed for missing file")
 
     except Exception as e:
-        print(f"✗ Failed to test tool execution: {e}")
+        print(f"FAILED: Failed to test tool execution: {e}")
         return False
 
-    print("\n✓ PDF tools integration test completed successfully!")
+    print("\nSUCCESS: PDF tools integration test completed successfully!")
     return True
 
 if __name__ == "__main__":
