@@ -381,11 +381,16 @@ print({{'info': info.__dict__, 'steps': steps, 'result': result}})
                         system_prompt="You are a concise research assistant. Summarize evidence with citations if available.",
                     )
                 except AgentClientError as exc:
-                    return f"tongyi_error: {exc}"
+                    return (
+                        f"tongyi_error: {exc}. "
+                        "Run 'python -m config_validator --check-openrouter' to troubleshoot OpenRouter connectivity."
+                    )
 
             handlers["tongyi"] = _call_tongyi
         else:
-            handlers["tongyi"] = lambda prompt: "tongyi_unavailable"
+            handlers["tongyi"] = (
+                lambda prompt: "tongyi_unavailable: configure OPENROUTER_API_KEY and run the config validator to enable remote reasoning."
+            )
         return handlers
 
 

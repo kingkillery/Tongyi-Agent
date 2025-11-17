@@ -7,12 +7,16 @@ All functions are pure and avoid network/external calls.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from markdown import markdown
 import yaml
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,8 +48,10 @@ def parse_markdown(path: str) -> MDInfo:
             fm_end = text.index("\n---\n", 4)
             frontmatter = yaml.safe_load(text[4:fm_end])
             body = text[fm_end + 5:]
-        except (yaml.YAMLError, ValueError):
-            pass
+        except (yaml.YAMLError, ValueError) as exc:
+            logger.warning("Failed to parse markdown frontmatter in %s: %s", path, exc)
+            frontmatter = None
+            body = text
     # Split into sections by headings
     sections = []
     heading_re = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)

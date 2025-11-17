@@ -37,8 +37,11 @@ class TongyiOrchestrator:
             api_key=DEFAULT_TONGYI_CONFIG.api_key,
             base_url=DEFAULT_TONGYI_CONFIG.base_url,
         )
+        self.offline_reason: Optional[str] = None
         if not self.client:
-            raise RuntimeError("Failed to initialize OpenRouter client")
+            raise RuntimeError(
+                "Failed to initialize OpenRouter client. Verify OPENROUTER_API_KEY and run 'python -m config_validator --check-openrouter'."
+            )
 
         # Initialize ReAct parser for natural-language tool call parsing
         self.react_parser = ReActParser()
@@ -102,6 +105,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
     def run(self, question: str) -> str:
         """Run the Tongyi-powered orchestrator."""
         logger.info(f"Starting Tongyi orchestrator for question: {question[:100]}...")
+
         
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -145,7 +149,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
                 
             except AgentClientError as e:
                 logger.error(f"Error calling Tongyi: {e}")
-                return f"Error calling Tongyi: {e}"
+                return self._offline_response(question, str(e))
             
             # Check if response contains tool calls (OpenRouter format)
             if hasattr(response, 'tool_calls') and response.tool_calls:
@@ -155,17 +159,18 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     if isinstance(tool_call, dict):
                         tool_call_id = tool_call.get("id")
                         function = tool_call.get("function", {}) or {}
-                        tool_name = function.get("name")
+                        tool_name_raw = function.get("name")
                         raw_arguments = function.get("arguments", {})
                     else:
                         tool_call_id = getattr(tool_call, "id", None)
                         function = getattr(tool_call, "function", None)
-                        tool_name = getattr(function, "name", None) if function else None
+                        tool_name_raw = getattr(function, "name", None) if function else None
                         raw_arguments = getattr(function, "arguments", {}) if function else {}
 
-                    if not tool_name:
+                    if not tool_name_raw:
                         logger.error(f"Tool call missing name: {tool_call}")
                         continue
+                    tool_name = tool_name_raw if isinstance(tool_name_raw, str) else str(tool_name_raw)
 
                     # Parse parameters from tool call
                     if isinstance(raw_arguments, str):
@@ -181,7 +186,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
                         continue
                     
                     # Prevent runaway repeats with identical tool + parameters
-                    repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                    repeat_key = self._repeat_guard_key(tool_name, parameters)
                     tool_repeat_counts[repeat_key] += 1
                     if tool_repeat_counts[repeat_key] > 3:
                         warning_msg = (
@@ -245,7 +250,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     parameters = tool_call.get("parameters", {})
                     
                     # Prevent runaway repeats with identical tool + parameters
-                    repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                    repeat_key = self._repeat_guard_key(tool_name, parameters)
                     tool_repeat_counts[repeat_key] += 1
                     if tool_repeat_counts[repeat_key] > 3:
                         warning_msg = (
@@ -299,11 +304,11 @@ Terminate the reasoning loop only after all necessary information is gathered an
                         if not block.action or not block.action_input:
                             continue
 
-                        tool_name = block.action
+                        tool_name = block.action if isinstance(block.action, str) else str(block.action)
                         parameters = block.action_input
 
                         # Prevent runaway repeats with identical tool + parameters
-                        repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                        repeat_key = self._repeat_guard_key(tool_name, parameters)
                         tool_repeat_counts[repeat_key] += 1
                         if tool_repeat_counts[repeat_key] > 3:
                             warning_msg = (
@@ -370,6 +375,26 @@ Terminate the reasoning loop only after all necessary information is gathered an
         
         logger.error("Maximum iterations reached without final answer")
         return "Error: Maximum iterations reached without final answer"
+
+    def _offline_response(self, question: str, reason: Optional[str]) -> str:
+        """Return a user-friendly message when OpenRouter is unavailable."""
+        steps = [
+            "Verify OPENROUTER_API_KEY is set in your environment or .env file.",
+            "Run 'python -m config_validator --check-openrouter' for automated diagnostics.",
+            "Double-check models.ini for valid model names and reachable base_url values.",
+        ]
+        header = "Tongyi Agent cannot reach OpenRouter, so the request cannot be processed right now."
+        reason_line = f"Cause: {reason}" if reason else "Cause: OpenRouter client was not initialized."
+        steps_text = "\n".join(f"  - {step}" for step in steps)
+        return f"{header}\n{reason_line}\n\nTroubleshooting steps:\n{steps_text}\n\nYour original question was preserved: '{question}'."
+
+    def _repeat_guard_key(self, tool_name: Any, parameters: Dict[str, Any]) -> str:
+        normalized_name = tool_name if isinstance(tool_name, str) else str(tool_name)
+        try:
+            serialized_params = json.dumps(parameters, sort_keys=True, default=str)
+        except TypeError:
+            serialized_params = repr(parameters)
+        return f"{normalized_name}:{serialized_params}"
     
     def _verify_response(self, response: str, tool_calls_made: List[Dict]) -> str:
         """Verify claims in the response using the verifier gate."""

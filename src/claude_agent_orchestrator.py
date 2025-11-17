@@ -42,8 +42,21 @@ try:
 
     # HookMatcher is not available in the current SDK version
     class HookMatcher:
-        def __init__(self, *args, **kwargs):
-            pass
+        """Lightweight compatibility shim for Claude SDK hook matching."""
+
+        def __init__(self, event: Optional[str] = None, *, tool: Optional[str] = None,
+                     metadata: Optional[Dict[str, Any]] = None):
+            self.event = event
+            self.tool = tool
+            self.metadata = metadata or {}
+
+        def matches(self, event_name: Optional[str], tool_name: Optional[str] = None) -> bool:
+            """Return True when both the event and tool constraints match."""
+            if self.event and event_name != self.event:
+                return False
+            if self.tool and tool_name != self.tool:
+                return False
+            return True
 
 except ImportError:
     CLAUDE_SDK_AVAILABLE = False
@@ -66,8 +79,20 @@ except ImportError:
 
     # HookMatcher is not available in the current SDK version
     class HookMatcher:
-        def __init__(self, *args, **kwargs):
-            pass
+        """Fallback shim providing minimal matching semantics."""
+
+        def __init__(self, event: Optional[str] = None, *, tool: Optional[str] = None,
+                     metadata: Optional[Dict[str, Any]] = None):
+            self.event = event
+            self.tool = tool
+            self.metadata = metadata or {}
+
+        def matches(self, event_name: Optional[str], tool_name: Optional[str] = None) -> bool:
+            if self.event and event_name != self.event:
+                return False
+            if self.tool and tool_name != self.tool:
+                return False
+            return True
 
 from config import DEFAULT_CLAUDE_CONFIG
 from delegation_policy import DelegationPolicy, AgentBudget
@@ -458,11 +483,11 @@ Response format:
                 logger.info("Starting to collect response from Claude SDK...")
                 # Use asyncio.wait_for to add timeout to the entire response collection
                 response_coroutine = self._collect_response()
-                response_parts = await asyncio.wait_for(response_coroutine, timeout=30.0)
+                response_parts = await asyncio.wait_for(response_coroutine, timeout=120.0)
                 logger.info(f"Collected {len(response_parts)} response parts")
             except asyncio.TimeoutError:
-                logger.error("Response collection timed out after 30 seconds")
-                raise asyncio.TimeoutError("Claude SDK response collection timed out after 30 seconds")
+                logger.error("Response collection timed out after 120 seconds")
+                raise asyncio.TimeoutError("Claude SDK response collection timed out after 120 seconds")
             except asyncio.CancelledError:
                 logger.error("Response collection was cancelled")
                 # Clean up client connection if needed

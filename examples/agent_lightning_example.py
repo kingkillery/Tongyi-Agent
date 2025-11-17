@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 def example_1_basic_training():
     """Example 1: Basic training with Tongyi Agent"""
-    print("🚀 Example 1: Basic Training with Tongyi Agent")
+    print("[Example 1] Basic Training with Tongyi Agent")
     print("=" * 50)
 
     try:
@@ -293,7 +293,7 @@ def example_5_export_analysis():
 
 def main():
     """Run all examples"""
-    print("⚡ Agent Lightning Integration Examples")
+    print("[Agent Lightning] Agent Lightning Integration Examples")
     print("=" * 60)
     print("This demo shows how to use Agent Lightning with Tongyi Agent")
     print("Make sure you have installed: pip install agentlightning torch transformers")

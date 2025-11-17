@@ -292,19 +292,91 @@ class OptimizedTongyiAgent:
 
     def export_training_data(self, filepath: str):
         """Export training data for external analysis"""
+        # Validate filepath to prevent path traversal
+        import os.path
+        if not isinstance(filepath, str):
+            raise TypeError("filepath must be a string")
+
+        # FIRST check for dangerous path patterns in the original input
+        dangerous_patterns = [
+            "..\\",
+            "../",
+            "..\\..\\",
+            "../../",
+            "C:\\Windows\\System32",  # This will also match subdirectories
+            "/etc/",                  # This will also match subdirectories
+            "/var/",
+            "/root/",
+            "C:\\Users\\",
+        ]
+
+        filepath_lower = filepath.lower()
+        for pattern in dangerous_patterns:
+            if pattern in filepath_lower:
+                raise ValueError("Dangerous path pattern detected")
+
+        # Additional check for specific dangerous system files
+        dangerous_files = [
+            "\\etc\\passwd",
+            "\\etc\\shadow",
+            "\\etc\\hosts",
+            "\\windows\\system32\\config",
+            "\\windows\\system32\\drivers\\etc\\hosts",
+            "\\windows\\system32\\sam",
+            "\\windows\\system32\\security"
+        ]
+
+        filepath_lower = filepath.lower()
+        for dangerous_file in dangerous_files:
+            if dangerous_file in filepath_lower:
+                raise ValueError("Dangerous system file access detected")
+
+        # Resolve relative paths safely
+        if not os.path.isabs(filepath):
+            # Export to a safe subdirectory of training_data_path
+            safe_dir = self.training_data_path
+            safe_filepath = os.path.join(safe_dir, os.path.basename(filepath))
+            # Ensure safe_filepath is still within safe_dir
+            if not os.path.abspath(safe_filepath).startswith(os.path.abspath(safe_dir)):
+                raise ValueError("Unsafe filepath detected")
+            filepath = safe_filepath
+        else:
+            filepath = os.path.abspath(filepath)
+
         try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+            # Sanitize data before export (remove sensitive information)
+            sanitized_interactions = []
+            for interaction in self.interaction_history:
+                sanitized = {
+                    "timestamp": interaction.get("timestamp"),
+                    "response_time": interaction.get("response_time"),
+                    "query_length": interaction.get("query_length"),
+                    "response_length": interaction.get("response_length"),
+                    "tools_used": interaction.get("tools_used", []),
+                    # Remove actual query/response content for privacy
+                }
+                sanitized_interactions.append(sanitized)
+
+            export_data = {
+                "interactions": sanitized_interactions,
+                "metrics": self.performance_metrics,
+                "config": {
+                    "optimization_mode": self.optimization_mode,
+                    "training_enabled": self.enable_training
+                },
+                "export_timestamp": time.time(),
+                "version": "1.0"
+            }
+
             with open(filepath, "w", encoding="utf-8") as f:
-                json.dump({
-                    "interactions": self.interaction_history,
-                    "metrics": self.performance_metrics,
-                    "config": {
-                        "optimization_mode": self.optimization_mode,
-                        "training_enabled": self.enable_training
-                    }
-                }, f, indent=2)
+                json.dump(export_data, f, indent=2)
             logger.info(f"Training data exported to {filepath}")
         except Exception as e:
             logger.error(f"Failed to export training data: {e}")
+            raise
 
 
 # Factory function for easy instantiation

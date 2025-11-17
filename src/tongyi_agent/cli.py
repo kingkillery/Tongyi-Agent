@@ -78,6 +78,36 @@ ORCHESTRATOR_ERROR = (CLAUDE_ORCHESTRATOR_ERROR if not CLAUDE_ORCHESTRATOR_AVAIL
 # Initialize console
 console = Console()
 
+
+def ensure_valid_root_path(raw_path: str) -> str:
+    """Resolve and validate the project root path."""
+    resolved = os.path.abspath(raw_path)
+    if os.path.isdir(resolved):
+        return resolved
+    if not os.path.exists(resolved):
+        reason = "does not exist"
+    else:
+        reason = "is not a directory"
+    _print_root_error(resolved, reason)
+    return resolved  # Unreachable but keeps type checkers happy
+
+
+def _print_root_error(resolved: str, reason: str) -> None:
+    message = f"Root path '{resolved}' {reason}."
+    suggestions = [
+        "Verify the path and rerun with --root pointing to your project directory.",
+        "Create the directory if needed (e.g., mkdir -p path/to/project).",
+        "Run 'python -m config_validator' to confirm configuration files exist in that location.",
+    ]
+    suggestion_text = "\n".join(f"  - {tip}" for tip in suggestions)
+    if RICH_AVAILABLE:
+        console.print(f"[red]{message}[/red]")
+        console.print(f"[yellow]Suggested actions:\n{suggestion_text}[/yellow]")
+    else:
+        print(message)
+        print("Suggested actions:\n" + suggestion_text)
+    raise SystemExit(2)
+
 # Session management
 class Session:
     def __init__(self, history_file: Optional[Path] = None):
@@ -139,7 +169,7 @@ def show_banner():
         banner = Panel(
             "[bold blue]Tongyi CLI Interactive[/bold blue]\n"
             "[dim]Modern Terminal Interface for Tongyi Agent[/dim]\n\n"
-            "Type 'help' for commands • Ctrl+C to exit • Ctrl+D to clear",
+            "Type 'help' for commands - Ctrl+C to exit - Ctrl+D to clear",
             title="[Tongyi] Welcome",
             border_style="blue"
         )
@@ -527,6 +557,7 @@ def process_command(command: str) -> bool:
 
 def interactive_mode(root: str = "."):
     """Run the interactive CLI loop."""
+    root = ensure_valid_root_path(root)
     show_banner()
 
     # Initialize orchestrator - prioritize Claude SDK
@@ -541,6 +572,7 @@ def interactive_mode(root: str = "."):
         except Exception as e:
             console.print(f"[red]✗ Failed to initialize Claude Agent SDK: {e}[/red]")
             console.print("[yellow]Falling back to Tongyi orchestrator...[/yellow]")
+            console.print("[dim]Tip: Run 'python -m config_validator --check-openrouter' to diagnose configuration issues.[/dim]")
 
     if orchestrator is None and TONGYI_ORCHESTRATOR_AVAILABLE:
         try:
@@ -549,10 +581,12 @@ def interactive_mode(root: str = "."):
             console.print("[green]✓ Tongyi Agent (Tongyi SDK) initialized successfully[/green]")
         except Exception as e:
             console.print(f"[red]✗ Failed to initialize Tongyi Agent: {e}[/red]")
+            console.print("[dim]Tip: Run 'python -m config_validator --check-openrouter' for diagnostics.[/dim]")
 
     if orchestrator is None:
         console.print(f"[red]✗ No orchestrator available: {ORCHESTRATOR_ERROR}[/red]")
         console.print("[yellow]Running in limited mode with stub responses.[/yellow]")
+        console.print("[dim]Tip: 'python -m config_validator --check-openrouter' can usually resolve setup issues.[/dim]")
     
     while True:
         try:
@@ -712,11 +746,24 @@ Examples:
     )
 
     parser.add_argument(
+        "--validate-config",
+        action="store_true",
+        help="Run configuration validation diagnostics and exit"
+    )
+
+    parser.add_argument(
         "--export-training-data",
         help="Export training data to specified file"
     )
 
     args = parser.parse_args()
+    args.root = ensure_valid_root_path(args.root)
+
+    if args.validate_config:
+        from config_validator import run_validation, print_report
+        report = run_validation(Path(args.root), check_openrouter=True)
+        print_report(report)
+        return
     
     # Handle --tools flag
     if args.tools:
@@ -773,7 +820,7 @@ Examples:
         use_optimized = args.train and OPTIMIZED_AGENTS_AVAILABLE
 
         if use_optimized:
-            print(f"🚀 Agent Lightning Training Mode Enabled (Mode: {args.training_mode})")
+            print(f"[Agent Lightning] Training Mode Enabled (Mode: {args.training_mode})")
             if CLAUDE_ORCHESTRATOR_AVAILABLE:
                 try:
                     orchestrator = create_optimized_claude_agent(
@@ -803,6 +850,7 @@ Examples:
                     orchestrator_type = "Claude Agent SDK"
                 except Exception as e:
                     print(f"Failed to initialize Claude Agent SDK: {e}")
+                    print("Tip: Run 'python -m config_validator --check-openrouter' for setup diagnostics.")
 
             if orchestrator is None and TONGYI_ORCHESTRATOR_AVAILABLE:
                 try:
@@ -810,6 +858,7 @@ Examples:
                     orchestrator_type = "Tongyi"
                 except Exception as e:
                     print(f"Failed to initialize Tongyi Agent: {e}")
+                    print("Tip: Run 'python -m config_validator --check-openrouter' for setup diagnostics.")
 
         if orchestrator:
             try:
@@ -853,12 +902,13 @@ Examples:
         else:
             print(f"No orchestrator available: {ORCHESTRATOR_ERROR}")
             print(f"Received question: '{question}'")
+            print("Tip: Run 'python -m config_validator --check-openrouter' to troubleshoot configuration issues.")
         return
 
 def handle_training_stats_command(args):
     """Handle training statistics command"""
     if not OPTIMIZED_AGENTS_AVAILABLE:
-        print(f"❌ Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
+        print(f"[ERROR] Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
         print("Install with: pip install agentlightning torch transformers")
         return
 
@@ -867,11 +917,11 @@ def handle_training_stats_command(args):
         config_summary = training_manager.get_training_config_summary()
 
         if RICH_AVAILABLE:
-            stats_table = Table(title="⚡ Agent Lightning Training Status")
+            stats_table = Table(title="Agent Lightning Training Status")
             stats_table.add_column("Setting", style="cyan")
             stats_table.add_column("Value", style="white")
 
-            stats_table.add_row("Training Enabled", "✅ Yes" if config_summary['training_enabled'] else "❌ No")
+            stats_table.add_row("Training Enabled", "Yes" if config_summary['training_enabled'] else "No")
             stats_table.add_row("Training Mode", config_summary['training_mode'])
             stats_table.add_row("Training Data Path", config_summary['training_data_path'])
             stats_table.add_row("Optimization Iterations", str(config_summary['optimization_iterations']))
@@ -879,7 +929,7 @@ def handle_training_stats_command(args):
             stats_table.add_row("Config File", config_summary['config_file'])
 
             console.print(stats_table)
-            console.print("\n[dim]💡 Use --train to enable training mode[/dim]")
+            console.print("\n[dim][INFO] Use --train to enable training mode[/dim]")
         else:
             print("⚡ Agent Lightning Training Status:")
             print(f"  Training Enabled: {'Yes' if config_summary['training_enabled'] else 'No'}")
@@ -891,12 +941,12 @@ def handle_training_stats_command(args):
             print("\n💡 Use --train to enable training mode")
 
     except Exception as e:
-        print(f"❌ Error getting training stats: {e}")
+        print(f"[ERROR] Error getting training stats: {e}")
 
 def handle_export_training_command(args):
     """Handle export training data command"""
     if not OPTIMIZED_AGENTS_AVAILABLE:
-        print(f"❌ Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
+        print(f"[ERROR] Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
         print("Install with: pip install agentlightning torch transformers")
         return
 
@@ -907,9 +957,9 @@ def handle_export_training_command(args):
         # Try to export from existing training data
         if os.path.exists(".tongyi_training"):
             if RICH_AVAILABLE:
-                console.print("📦 Exporting existing training data...")
+                console.print("[INFO] Exporting existing training data...")
             else:
-                print("📦 Exporting existing training data...")
+                print("[INFO] Exporting existing training data...")
 
             # Create agent to export data
             agent = training_manager.create_optimized_agent("tongyi", enable_training=False)
@@ -917,16 +967,16 @@ def handle_export_training_command(args):
 
             if success:
                 if RICH_AVAILABLE:
-                    console.print(f"✅ Training data exported to: {args.export_training_data}")
+                    console.print(f"[SUCCESS] Training data exported to: {args.export_training_data}")
                 else:
                     print(f"✅ Training data exported to: {args.export_training_data}")
             else:
-                print("❌ Failed to export training data")
+                print("[ERROR] Failed to export training data")
         else:
-            print("ℹ️  No training data found. Run with --train to generate training data first.")
+            print("[INFO] No training data found. Run with --train to generate training data first.")
 
     except Exception as e:
-        print(f"❌ Error exporting training data: {e}")
+        print(f"[ERROR] Error exporting training data: {e}")
 
 def handle_optimization_command(args):
     """Handle optimization command"""
@@ -939,9 +989,9 @@ def handle_optimization_command(args):
         training_manager = get_training_manager()
 
         if RICH_AVAILABLE:
-            console.print(f"🚀 Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
+            console.print(f"[INFO] Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
         else:
-            print(f"🚀 Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
+            print(f"[INFO] Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
 
         # Create agent and run optimization
         agent = training_manager.create_optimized_agent("tongyi", enable_training=True)
@@ -949,9 +999,9 @@ def handle_optimization_command(args):
 
         if success:
             if RICH_AVAILABLE:
-                console.print("✅ Optimization completed successfully!")
+                console.print("[SUCCESS] Optimization completed successfully!")
             else:
-                print("✅ Optimization completed successfully!")
+                print("[SUCCESS] Optimization completed successfully!")
 
             # Show stats
             stats = training_manager.get_agent_stats(agent)
@@ -960,10 +1010,10 @@ def handle_optimization_command(args):
                 for key, value in stats.items():
                     print(f"  {key}: {value}")
         else:
-            print("❌ Optimization failed")
+            print("[ERROR] Optimization failed")
 
     except Exception as e:
-        print(f"❌ Error during optimization: {e}")
+        print(f"[ERROR] Error during optimization: {e}")
 
     # Default to interactive mode
     interactive_mode(root=args.root)

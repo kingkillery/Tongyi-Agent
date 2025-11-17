@@ -153,8 +153,8 @@ class ReActParser:
         # Try JSON parsing first
         try:
             return json.loads(input_text)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            logger.debug("Failed to parse action input as JSON: %s", exc)
         
         # Try key=value format
         if '=' in input_text:
