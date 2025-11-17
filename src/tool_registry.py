@@ -17,6 +17,7 @@ from sandbox_exec import run_snippet, ExecResult
 from scholar_adapter import ScholarAdapter, PaperMeta
 from csv_utils import sniff_csv, suggest_cleaning_steps, clean_csv
 from md_utils import parse_markdown, suggest_md_cleaning, clean_markdown
+from pdf_tools import get_pdf_processor, PDFInfo, PDFPageInfo
 
 
 @dataclass
@@ -139,6 +140,53 @@ class ToolRegistry:
                     },
                     "required": ["context"]
                 }
+            ),
+            ToolSchema(
+                name="pdf_info",
+                description="Extract metadata and information from a PDF file.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "string — path to the PDF file (relative to workspace)"}
+                    },
+                    "required": ["path"]
+                }
+            ),
+            ToolSchema(
+                name="pdf_extract_text",
+                description="Extract text content from PDF file pages.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "string — path to the PDF file (relative to workspace)"},
+                        "pages": {"type": "array", "items": {"type": "integer"}, "description": "optional array — specific page numbers to extract (default: all pages)"}
+                    },
+                    "required": ["path"]
+                }
+            ),
+            ToolSchema(
+                name="pdf_search",
+                description="Search for specific text within a PDF file.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "string — path to the PDF file (relative to workspace)"},
+                        "query": {"type": "string", "description": "string — text to search for within the PDF"}
+                    },
+                    "required": ["path", "query"]
+                }
+            ),
+            ToolSchema(
+                name="pdf_merge",
+                description="Merge multiple PDF files into a single document.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "paths": {"type": "array", "items": {"type": "string"}, "description": "array — list of PDF file paths to merge"},
+                        "output": {"type": "string", "description": "string — output file path for merged PDF"}
+                    },
+                    "required": ["paths", "output"]
+                }
             )
         ]
     
@@ -250,7 +298,70 @@ class ToolRegistry:
                     return ToolResult(name=call.name, result=f"# Summary\n\n{context}")
                 else:
                     return ToolResult(name=call.name, result=context)
-            
+
+            elif call.name == "pdf_info":
+                path = call.parameters["path"]
+                try:
+                    pdf_processor = get_pdf_processor(self.root)
+                    info = pdf_processor.get_pdf_info(path)
+                    return ToolResult(name=call.name, result=asdict(info))
+                except Exception as e:
+                    return ToolResult(name=call.name, error=f"Failed to get PDF info: {str(e)}")
+
+            elif call.name == "pdf_extract_text":
+                path = call.parameters["path"]
+                pages = call.parameters.get("pages")
+                try:
+                    pdf_processor = get_pdf_processor(self.root)
+                    if pages:
+                        # Extract specific pages
+                        pages_info = pdf_processor.extract_text(path, pages)
+                        result = {
+                            "file": path,
+                            "pages": [asdict(page_info) for page_info in pages_info]
+                        }
+                    else:
+                        # Extract all text as simple string
+                        text = pdf_processor.extract_text_simple(path)
+                        result = {
+                            "file": path,
+                            "text": text,
+                            "format": "plain_text"
+                        }
+                    return ToolResult(name=call.name, result=result)
+                except Exception as e:
+                    return ToolResult(name=call.name, error=f"Failed to extract PDF text: {str(e)}")
+
+            elif call.name == "pdf_search":
+                path = call.parameters["path"]
+                query = call.parameters["query"]
+                try:
+                    pdf_processor = get_pdf_processor(self.root)
+                    results = pdf_processor.search_in_pdf(path, query)
+                    return ToolResult(name=call.name, result={
+                        "file": path,
+                        "query": query,
+                        "matches": results,
+                        "match_count": len(results)
+                    })
+                except Exception as e:
+                    return ToolResult(name=call.name, error=f"Failed to search PDF: {str(e)}")
+
+            elif call.name == "pdf_merge":
+                paths = call.parameters["paths"]
+                output = call.parameters["output"]
+                try:
+                    pdf_processor = get_pdf_processor(self.root)
+                    output_path = pdf_processor.merge_pdfs(paths, output)
+                    return ToolResult(name=call.name, result={
+                        "input_files": paths,
+                        "output_file": output,
+                        "merged_path": output_path,
+                        "message": f"Successfully merged {len(paths)} PDFs into {output}"
+                    })
+                except Exception as e:
+                    return ToolResult(name=call.name, error=f"Failed to merge PDFs: {str(e)}")
+
             else:
                 return ToolResult(name=call.name, error=f"Unknown tool: {call.name}")
         
