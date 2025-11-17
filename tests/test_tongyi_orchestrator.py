@@ -258,11 +258,14 @@ class TestTongyiOrchestrator:
     def test_get_tool_usage_summary(self, orchestrator):
         """Test tool usage summary method."""
         summary = orchestrator.get_tool_usage_summary()
+        registered_tools = orchestrator.tools.get_tools()
+        expected_names = [tool.name for tool in registered_tools]
         
         assert "total_tools" in summary
         assert "tool_names" in summary
         assert "root_directory" in summary
         assert "model" in summary
-        assert summary["total_tools"] == 7  # All tools from schema
+        assert summary["total_tools"] == len(expected_names)
+        assert set(summary["tool_names"]) == set(expected_names)
         assert "search_code" in summary["tool_names"]
         assert "alibaba/tongyi-deepresearch-30b-a3b" in summary["model"]

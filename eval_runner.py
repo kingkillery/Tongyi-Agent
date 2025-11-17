@@ -62,8 +62,8 @@ def main() -> None:
     print(f"Rate: {summary['verified'] / summary['total']:.2%}" if summary["total"] else "N/A")
     # Optionally show per-item details
     for item in summary["results"]:
-        status = "✓" if item["has_citations"] else "✗"
-        print(f"  {status} {item['q']}")
+        status = "OK" if item["has_citations"] else "FAIL"
+        print(f"  [{status}] {item['q']}")
 
 
 if __name__ == "__main__":
