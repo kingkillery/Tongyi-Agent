@@ -53,6 +53,11 @@ claude-sdk = [
     "claude-agent-sdk>=0.1.0",
     "nest-asyncio>=1.5.0",
 ]
+agent-lightning = [
+    "agentlightning>=0.1.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/your-org/tongyi-cli-interactive"

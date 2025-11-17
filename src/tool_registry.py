@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
@@ -28,7 +28,7 @@ class ToolCall:
 @dataclass
 class ToolResult:
     name: str
-    result: Any
+    result: Any = None
     error: Optional[str] = None
 
 
@@ -146,11 +146,18 @@ class ToolRegistry:
         """Execute a tool call and return the result."""
         try:
             if call.name == "search_code":
-                query = call.parameters["query"]
+                raw_query = call.parameters["query"]
+                if isinstance(raw_query, str):
+                    query = raw_query
+                elif isinstance(raw_query, (list, tuple)):
+                    query = " ".join(str(item) for item in raw_query)
+                else:
+                    query = str(raw_query)
                 paths = call.parameters.get("paths", [])
                 max_results = call.parameters.get("max_results", 20)
                 results = self.code_search.search(query, paths=paths, max_results=max_results)
-                return ToolResult(name=call.name, result=results)
+                serializable_results = [asdict(hit) for hit in results]
+                return ToolResult(name=call.name, result=serializable_results)
             
             elif call.name == "read_file":
                 path = call.parameters["path"]
@@ -159,8 +166,8 @@ class ToolRegistry:
                     return ToolResult(name=call.name, error=f"File not found: {path}")
                 start_line = call.parameters.get("start_line")
                 end_line = call.parameters.get("end_line")
-                content = read_snippet(full_path, start_line=start_line, end_line=end_line)
-                return ToolResult(name=call.name, result=content)
+                content = read_snippet(full_path, start=start_line, end=end_line)
+                return ToolResult(name=call.name, result=asdict(content))
             
             elif call.name == "run_sandbox":
                 code = call.parameters["code"]

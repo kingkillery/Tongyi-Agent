@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import logging
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 # Add parent to path for imports
@@ -110,6 +111,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
         max_iterations = 20
         iteration = 0
         tool_calls_made = []
+        tool_repeat_counts: Dict[str, int] = defaultdict(int)
         
         while iteration < max_iterations:
             iteration += 1
@@ -149,18 +151,58 @@ Terminate the reasoning loop only after all necessary information is gathered an
             if hasattr(response, 'tool_calls') and response.tool_calls:
                 # Handle structured tool calls
                 for tool_call in response.tool_calls:
-                    tool_name = tool_call.function.name
-                    try:
-                        parameters = json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        logger.error(f"Invalid JSON in tool call arguments: {tool_call.function.arguments}")
+                    # Normalize tool call structure (may be dict or object)
+                    if isinstance(tool_call, dict):
+                        tool_call_id = tool_call.get("id")
+                        function = tool_call.get("function", {}) or {}
+                        tool_name = function.get("name")
+                        raw_arguments = function.get("arguments", {})
+                    else:
+                        tool_call_id = getattr(tool_call, "id", None)
+                        function = getattr(tool_call, "function", None)
+                        tool_name = getattr(function, "name", None) if function else None
+                        raw_arguments = getattr(function, "arguments", {}) if function else {}
+
+                    if not tool_name:
+                        logger.error(f"Tool call missing name: {tool_call}")
+                        continue
+
+                    # Parse parameters from tool call
+                    if isinstance(raw_arguments, str):
+                        try:
+                            parameters = json.loads(raw_arguments)
+                        except json.JSONDecodeError:
+                            logger.error(f"Invalid JSON in tool call arguments for {tool_name}: {raw_arguments}")
+                            continue
+                    elif isinstance(raw_arguments, dict):
+                        parameters = raw_arguments
+                    else:
+                        logger.error(f"Unsupported arguments type for tool {tool_name}: {type(raw_arguments)}")
                         continue
                     
+                    # Prevent runaway repeats with identical tool + parameters
+                    repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                    tool_repeat_counts[repeat_key] += 1
+                    if tool_repeat_counts[repeat_key] > 3:
+                        warning_msg = (
+                            f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
+                            "skipping execution to avoid infinite loop."
+                        )
+                        logger.warning(warning_msg)
+                        tool_message = {"role": "tool", "content": warning_msg}
+                        if tool_call_id:
+                            tool_message["tool_call_id"] = tool_call_id
+                        messages.append(tool_message)
+                        continue
+
                     # Check budget
                     if not self.policy.allow(tool_name):
                         error_msg = f"Tool {tool_name} budget exceeded"
                         logger.warning(error_msg)
-                        messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": error_msg})
+                        tool_message = {"role": "tool", "content": error_msg}
+                        if tool_call_id:
+                            tool_message["tool_call_id"] = tool_call_id
+                        messages.append(tool_message)
                         continue
                     
                     # Execute tool
@@ -184,12 +226,14 @@ Terminate the reasoning loop only after all necessary information is gathered an
                         logger.warning(f"Tool {tool_name} failed: {result.error}")
                     else:
                         tool_response = json.dumps(result.result, indent=2)
-                    
-                    messages.append({
+
+                    tool_message = {
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
                         "content": tool_response
-                    })
+                    }
+                    if tool_call_id:
+                        tool_message["tool_call_id"] = tool_call_id
+                    messages.append(tool_message)
                 continue
             
             # Check if response is a simple JSON tool call (fallback)
@@ -200,6 +244,18 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     tool_name = tool_call["tool"]
                     parameters = tool_call.get("parameters", {})
                     
+                    # Prevent runaway repeats with identical tool + parameters
+                    repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                    tool_repeat_counts[repeat_key] += 1
+                    if tool_repeat_counts[repeat_key] > 3:
+                        warning_msg = (
+                            f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
+                            "skipping execution to avoid infinite loop."
+                        )
+                        logger.warning(warning_msg)
+                        messages.append({"role": "user", "content": warning_msg})
+                        continue
+
                     # Check budget
                     if not self.policy.allow(tool_name):
                         error_msg = f"Tool {tool_name} budget exceeded"
@@ -245,6 +301,18 @@ Terminate the reasoning loop only after all necessary information is gathered an
 
                         tool_name = block.action
                         parameters = block.action_input
+
+                        # Prevent runaway repeats with identical tool + parameters
+                        repeat_key = json.dumps({"tool": tool_name, "params": parameters}, sort_keys=True)
+                        tool_repeat_counts[repeat_key] += 1
+                        if tool_repeat_counts[repeat_key] > 3:
+                            warning_msg = (
+                                f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
+                                "skipping execution to avoid infinite loop."
+                            )
+                            logger.warning(warning_msg)
+                            messages.append({"role": "user", "content": warning_msg})
+                            continue
 
                         # Check budget
                         if not self.policy.allow(tool_name):

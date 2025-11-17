@@ -51,6 +51,16 @@ except ImportError as e:
     TONGYI_ORCHESTRATOR_AVAILABLE = False
     TONGYI_ORCHESTRATOR_ERROR = str(e)
 
+# Import optimized agents with Agent Lightning
+try:
+    from optimized_tongyi_agent import OptimizedTongyiAgent, create_optimized_agent
+    from optimized_claude_agent import OptimizedClaudeAgent, create_optimized_claude_agent
+    from training_manager import get_training_manager
+    OPTIMIZED_AGENTS_AVAILABLE = True
+except ImportError as e:
+    OPTIMIZED_AGENTS_AVAILABLE = False
+    OPTIMIZED_AGENTS_ERROR = str(e)
+
 # Import model manager for model switching
 try:
     from model_manager import model_manager
@@ -669,6 +679,43 @@ Examples:
         help="Show available models and current selection"
     )
 
+    parser.add_argument(
+        "--train",
+        action="store_true",
+        help="Enable Agent Lightning training mode"
+    )
+
+    parser.add_argument(
+        "--training-mode",
+        choices=["prompt", "rl", "sft"],
+        default="prompt",
+        help="Training optimization mode (default: prompt)"
+    )
+
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Run Agent Lightning optimization"
+    )
+
+    parser.add_argument(
+        "--optimize-iterations",
+        type=int,
+        default=100,
+        help="Number of optimization iterations (default: 100)"
+    )
+
+    parser.add_argument(
+        "--training-stats",
+        action="store_true",
+        help="Show training performance statistics"
+    )
+
+    parser.add_argument(
+        "--export-training-data",
+        help="Export training data to specified file"
+    )
+
     args = parser.parse_args()
     
     # Handle --tools flag
@@ -682,6 +729,21 @@ Examples:
             handle_models_command([])
         else:
             print(f"Model manager not available: {MODEL_MANAGER_ERROR}")
+        return
+
+    # Handle --training-stats flag
+    if args.training_stats:
+        handle_training_stats_command(args)
+        return
+
+    # Handle --export-training-data flag
+    if args.export_training_data:
+        handle_export_training_command(args)
+        return
+
+    # Handle --optimize flag
+    if args.optimize:
+        handle_optimization_command(args)
         return
 
     # Handle model selection
@@ -707,19 +769,47 @@ Examples:
         orchestrator = None
         orchestrator_type = None
 
-        if CLAUDE_ORCHESTRATOR_AVAILABLE:
-            try:
-                orchestrator = ClaudeAgentOrchestrator(root=args.root)
-                orchestrator_type = "Claude Agent SDK"
-            except Exception as e:
-                print(f"Failed to initialize Claude Agent SDK: {e}")
+        # Check if training mode is enabled and use optimized agents
+        use_optimized = args.train and OPTIMIZED_AGENTS_AVAILABLE
 
-        if orchestrator is None and TONGYI_ORCHESTRATOR_AVAILABLE:
-            try:
-                orchestrator = TongyiOrchestrator(root=args.root)
-                orchestrator_type = "Tongyi"
-            except Exception as e:
-                print(f"Failed to initialize Tongyi Agent: {e}")
+        if use_optimized:
+            print(f"🚀 Agent Lightning Training Mode Enabled (Mode: {args.training_mode})")
+            if CLAUDE_ORCHESTRATOR_AVAILABLE:
+                try:
+                    orchestrator = create_optimized_claude_agent(
+                        root=args.root,
+                        optimization_mode=args.training_mode,
+                        enable_training=True
+                    )
+                    orchestrator_type = "Optimized Claude Agent"
+                except Exception as e:
+                    print(f"Failed to initialize Optimized Claude Agent: {e}")
+
+            if orchestrator is None and TONGYI_ORCHESTRATOR_AVAILABLE:
+                try:
+                    orchestrator = create_optimized_agent(
+                        root=args.root,
+                        optimization_mode=args.training_mode,
+                        enable_training=True
+                    )
+                    orchestrator_type = "Optimized Tongyi Agent"
+                except Exception as e:
+                    print(f"Failed to initialize Optimized Tongyi Agent: {e}")
+        else:
+            # Use standard orchestrators
+            if CLAUDE_ORCHESTRATOR_AVAILABLE:
+                try:
+                    orchestrator = ClaudeAgentOrchestrator(root=args.root)
+                    orchestrator_type = "Claude Agent SDK"
+                except Exception as e:
+                    print(f"Failed to initialize Claude Agent SDK: {e}")
+
+            if orchestrator is None and TONGYI_ORCHESTRATOR_AVAILABLE:
+                try:
+                    orchestrator = TongyiOrchestrator(root=args.root)
+                    orchestrator_type = "Tongyi"
+                except Exception as e:
+                    print(f"Failed to initialize Tongyi Agent: {e}")
 
         if orchestrator:
             try:
@@ -764,7 +854,117 @@ Examples:
             print(f"No orchestrator available: {ORCHESTRATOR_ERROR}")
             print(f"Received question: '{question}'")
         return
-    
+
+def handle_training_stats_command(args):
+    """Handle training statistics command"""
+    if not OPTIMIZED_AGENTS_AVAILABLE:
+        print(f"❌ Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
+        print("Install with: pip install agentlightning torch transformers")
+        return
+
+    try:
+        training_manager = get_training_manager()
+        config_summary = training_manager.get_training_config_summary()
+
+        if RICH_AVAILABLE:
+            stats_table = Table(title="⚡ Agent Lightning Training Status")
+            stats_table.add_column("Setting", style="cyan")
+            stats_table.add_column("Value", style="white")
+
+            stats_table.add_row("Training Enabled", "✅ Yes" if config_summary['training_enabled'] else "❌ No")
+            stats_table.add_row("Training Mode", config_summary['training_mode'])
+            stats_table.add_row("Training Data Path", config_summary['training_data_path'])
+            stats_table.add_row("Optimization Iterations", str(config_summary['optimization_iterations']))
+            stats_table.add_row("Optimization Target", config_summary['optimization_target'])
+            stats_table.add_row("Config File", config_summary['config_file'])
+
+            console.print(stats_table)
+            console.print("\n[dim]💡 Use --train to enable training mode[/dim]")
+        else:
+            print("⚡ Agent Lightning Training Status:")
+            print(f"  Training Enabled: {'Yes' if config_summary['training_enabled'] else 'No'}")
+            print(f"  Training Mode: {config_summary['training_mode']}")
+            print(f"  Training Data Path: {config_summary['training_data_path']}")
+            print(f"  Optimization Iterations: {config_summary['optimization_iterations']}")
+            print(f"  Optimization Target: {config_summary['optimization_target']}")
+            print(f"  Config File: {config_summary['config_file']}")
+            print("\n💡 Use --train to enable training mode")
+
+    except Exception as e:
+        print(f"❌ Error getting training stats: {e}")
+
+def handle_export_training_command(args):
+    """Handle export training data command"""
+    if not OPTIMIZED_AGENTS_AVAILABLE:
+        print(f"❌ Optimized agents not available: {OPTIMIZED_AGENTS_ERROR}")
+        print("Install with: pip install agentlightning torch transformers")
+        return
+
+    try:
+        # Create a temporary optimized agent to export data
+        training_manager = get_training_manager()
+
+        # Try to export from existing training data
+        if os.path.exists(".tongyi_training"):
+            if RICH_AVAILABLE:
+                console.print("📦 Exporting existing training data...")
+            else:
+                print("📦 Exporting existing training data...")
+
+            # Create agent to export data
+            agent = training_manager.create_optimized_agent("tongyi", enable_training=False)
+            success = training_manager.export_training_data(agent, args.export_training_data)
+
+            if success:
+                if RICH_AVAILABLE:
+                    console.print(f"✅ Training data exported to: {args.export_training_data}")
+                else:
+                    print(f"✅ Training data exported to: {args.export_training_data}")
+            else:
+                print("❌ Failed to export training data")
+        else:
+            print("ℹ️  No training data found. Run with --train to generate training data first.")
+
+    except Exception as e:
+        print(f"❌ Error exporting training data: {e}")
+
+def handle_optimization_command(args):
+    """Handle optimization command"""
+    if not OPTIMIZED_AGENTS_AVAILABLE:
+        print(f"❌ Agent Lightning not available: {OPTIMIZED_AGENTS_ERROR}")
+        print("Install with: pip install agentlightning torch transformers")
+        return
+
+    try:
+        training_manager = get_training_manager()
+
+        if RICH_AVAILABLE:
+            console.print(f"🚀 Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
+        else:
+            print(f"🚀 Running Agent Lightning optimization ({args.optimize_iterations} iterations)...")
+
+        # Create agent and run optimization
+        agent = training_manager.create_optimized_agent("tongyi", enable_training=True)
+        success = training_manager.run_optimization(agent, iterations=args.optimize_iterations)
+
+        if success:
+            if RICH_AVAILABLE:
+                console.print("✅ Optimization completed successfully!")
+            else:
+                print("✅ Optimization completed successfully!")
+
+            # Show stats
+            stats = training_manager.get_agent_stats(agent)
+            if stats:
+                print("\n📊 Performance Stats:")
+                for key, value in stats.items():
+                    print(f"  {key}: {value}")
+        else:
+            print("❌ Optimization failed")
+
+    except Exception as e:
+        print(f"❌ Error during optimization: {e}")
+
     # Default to interactive mode
     interactive_mode(root=args.root)
 

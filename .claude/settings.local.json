@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch(domain:arxiv.org)"
+      "WebFetch(domain:arxiv.org)",
+      "Bash(python:*)",
+      "Bash(tongyi --help:*)",
+      "Bash(tongyi:*)",
+      "Bash(tongyi-cli --tools:*)",
+      "Bash(timeout:*)",
+      "Bash(dir:*)",
+      "Bash(tongyi-cli:*)"
     ],
     "deny": [],
     "ask": []
