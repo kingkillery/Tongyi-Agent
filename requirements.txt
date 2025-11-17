@@ -16,3 +16,8 @@ pymupdf>=1.23.0
 python-pptx>=0.6.21
 openpyxl>=3.1.0
 rich>=13.0
+
+# Optional dependencies for Claude Agent SDK support
+# Install with: pip install claude-agent-sdk nest-asyncio
+# claude-agent-sdk>=0.1.0
+# nest-asyncio>=1.5.0
