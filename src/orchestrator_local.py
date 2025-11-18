@@ -20,12 +20,12 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from adaptive_planner import PlanStage, build_manifest, plan_stages
-from delegation_policy import AgentBudget, DelegationPolicy
+from delegation_policy import AgentBudget
 from delegation_clients import load_openrouter_client, AgentClientError
-from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
+from model_config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER
 from code_search import CodeSearch, SearchHit
 from file_read import read_snippet
-from verifier_gate import VerifierGate, Claim
+from orchestrator_base import BaseOrchestrator
 from sandbox_exec import run_snippet, ExecResult
 from scholar_adapter import ScholarAdapter, PaperMeta
 from csv_utils import sniff_csv, suggest_cleaning_steps, clean_csv, CSVInfo
@@ -57,32 +57,45 @@ class DelegateTool:
         return compressed
 
 
-class LocalOrchestrator:
+class LocalOrchestrator(BaseOrchestrator):
+    """Local-first orchestrator using adaptive planning and delegation."""
+
     def __init__(
         self,
         root: str = ".",
         agent_budgets: Optional[Dict[str, AgentBudget]] = None,
         delegate_handlers: Optional[Dict[str, Callable[[str], str]]] = None,
     ):
-        self.root = os.path.abspath(root)
+        # LocalOrchestrator has custom initialization needs
+        self.delegate_handlers = delegate_handlers
+        super().__init__(root=root, agent_budgets=agent_budgets)
+
+        # LocalOrchestrator-specific components
         self.manifest = build_manifest(root)
         self.stages: List[PlanStage] = plan_stages(self.manifest)
-        self.policy = DelegationPolicy(
-            agent_budgets=agent_budgets
-            or {
-                "tongyi": AgentBudget(max_calls=3, max_tokens=1200),
-                "small": AgentBudget(max_calls=2, max_tokens=400),
-                "sandbox": AgentBudget(max_calls=2, max_tokens=600),
-                "scholar": AgentBudget(max_calls=2, max_tokens=500),
-                "csv_cleaner": AgentBudget(max_calls=2, max_tokens=800),
-                "md_cleaner": AgentBudget(max_calls=2, max_tokens=700),
-            }
-        )
         self.code_search = CodeSearch(root=self.root)
-        self.verifier_gate = VerifierGate()
         self.scholar = ScholarAdapter()
         handlers = delegate_handlers or self._build_default_delegate_handlers()
         self.delegate_tool = DelegateTool(self.policy, handlers)
+
+    def _create_tools(self):
+        """LocalOrchestrator doesn't use ToolRegistry."""
+        return None
+
+    def _get_default_budgets(self) -> Dict[str, AgentBudget]:
+        """Get default budgets for delegation-based orchestration."""
+        return {
+            "tongyi": AgentBudget(max_calls=3, max_tokens=1200),
+            "small": AgentBudget(max_calls=2, max_tokens=400),
+            "sandbox": AgentBudget(max_calls=2, max_tokens=600),
+            "scholar": AgentBudget(max_calls=2, max_tokens=500),
+            "csv_cleaner": AgentBudget(max_calls=2, max_tokens=800),
+            "md_cleaner": AgentBudget(max_calls=2, max_tokens=700),
+        }
+
+    def _initialize_client(self):
+        """LocalOrchestrator uses delegation, no single client to initialize."""
+        pass
 
     def run(self, question: str) -> str:
         state = LoopState(question=question)

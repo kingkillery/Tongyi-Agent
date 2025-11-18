@@ -20,17 +20,25 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import logging
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
 
-DEFAULT_TIMEOUT_S = 60
-STDIO_LIMIT = 64 * 1024  # 64 KB each
-DOCKER_IMAGE = "python:3.13-slim"
-MEMORY_LIMIT = "256m"
-CPU_LIMIT = "0.5"  # half a core
+# Add src to path for config imports
+_src_path = Path(__file__).parent
+if str(_src_path) not in sys.path:
+    sys.path.insert(0, str(_src_path))
+
+from config.sandbox import DEFAULT_SANDBOX_CONFIG  # noqa: E402
+from config.timeouts import DEFAULT_TIMEOUTS  # noqa: E402
+
+# Module-level Docker image pull cache
+_DOCKER_IMAGE_PULLED = False
+_DOCKER_IMAGE_PULL_LOCK = threading.Lock()
 
 # Configure audit logger
 logger = logging.getLogger(__name__)
@@ -56,15 +64,50 @@ class ExecResult:
 def _docker_available() -> bool:
     """Check if Docker daemon is available."""
     try:
-        subprocess.run(["docker", "--version"], check=True, capture_output=True, timeout=5)
-        subprocess.run(["docker", "info"], check=True, capture_output=True, timeout=5)
+        timeout = DEFAULT_TIMEOUTS.docker_check
+        subprocess.run(["docker", "--version"], check=True, capture_output=True, timeout=timeout)
+        subprocess.run(["docker", "info"], check=True, capture_output=True, timeout=timeout)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
-def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int = DEFAULT_TIMEOUT_S, seed: int = 1337, base_dir: Optional[str] = None) -> ExecResult:
+def _ensure_docker_image() -> None:
+    """Pull Docker image once per process to avoid repeated pulls."""
+    global _DOCKER_IMAGE_PULLED
+    if _DOCKER_IMAGE_PULLED:
+        return
+
+    with _DOCKER_IMAGE_PULL_LOCK:
+        # Double-check after acquiring lock
+        if _DOCKER_IMAGE_PULLED:
+            return
+
+        try:
+            image = DEFAULT_SANDBOX_CONFIG.docker_image
+            timeout = DEFAULT_TIMEOUTS.docker_operations
+            logger.info(f"Pulling Docker image {image}...")
+            subprocess.run(
+                ["docker", "pull", image],
+                check=True,
+                capture_output=True,
+                timeout=timeout
+            )
+            _DOCKER_IMAGE_PULLED = True
+            logger.info(f"Docker image {image} ready")
+        except Exception as e:
+            # If pull fails, image might already exist locally
+            # Let docker run fail later if image truly unavailable
+            logger.warning(f"Docker image pull failed (may already exist locally): {e}")
+            _DOCKER_IMAGE_PULLED = True  # Don't retry every time
+
+
+def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int = None, seed: int = None, base_dir: Optional[str] = None) -> ExecResult:
     """Execute code inside a Docker container with resource caps and no-network."""
+    # Use config defaults if not provided
+    timeout_s = timeout_s or DEFAULT_SANDBOX_CONFIG.default_timeout_s
+    seed = seed if seed is not None else DEFAULT_SANDBOX_CONFIG.seed
+
     harness = (
         "import json, os, random, sys, time\n"
         f"random.seed({seed})\n"
@@ -91,14 +134,14 @@ def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int 
         container_name = f"sandbox_{uuid.uuid4().hex[:8]}"
         start = time.time()
         try:
-            # Pull image if not present (suppress output)
-            subprocess.run(["docker", "pull", DOCKER_IMAGE], check=True, capture_output=True, timeout=30)
+            # Ensure Docker image is available (pulled once per process)
+            _ensure_docker_image()
             cmd = [
                 "docker", "run", "--rm",
                 "--name", container_name,
                 "--network", "none",  # no network
-                "--memory", MEMORY_LIMIT,
-                "--cpus", CPU_LIMIT,
+                "--memory", DEFAULT_SANDBOX_CONFIG.memory_limit,
+                "--cpus", DEFAULT_SANDBOX_CONFIG.cpu_limit,
                 "--read-only",
                 "--tmpfs", "/tmp:noexec,nosuid,size=100m",
                 # Mount base directory read-only at /workspace
@@ -107,7 +150,7 @@ def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int 
                 "-v", f"{script_path}:/snippet.py:ro",
                 "-e", "SANDBOX_INPUT=" + json.dumps(input_json or {}),
                 "-e", "PYTHONPATH=/workspace",
-                DOCKER_IMAGE,
+                DEFAULT_SANDBOX_CONFIG.docker_image,
                 "python", "-u", "/snippet.py"
             ]
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)
@@ -130,8 +173,8 @@ def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int 
             logger.warning("Docker sandbox timed out: container=%s ms=%s", container_name, duration)
             return ExecResult(
                 False,
-                stdout[:STDIO_LIMIT].decode(errors="ignore"),
-                stderr[:STDIO_LIMIT].decode(errors="ignore"),
+                stdout[:DEFAULT_SANDBOX_CONFIG.stdio_limit].decode(errors="ignore"),
+                stderr[:DEFAULT_SANDBOX_CONFIG.stdio_limit].decode(errors="ignore"),
                 -9,
                 duration,
                 container_id=container_name,
@@ -143,7 +186,7 @@ def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int 
             return ExecResult(
                 False,
                 "",
-                str(exc)[:STDIO_LIMIT],
+                str(exc)[:DEFAULT_SANDBOX_CONFIG.stdio_limit],
                 -1,
                 duration,
                 container_id=container_name,
@@ -151,7 +194,7 @@ def _run_in_docker(code: str, input_json: Optional[Dict] = None, timeout_s: int 
             )
 
 
-def run_snippet(code: str, input_json: Optional[Dict] = None, timeout_s: int = DEFAULT_TIMEOUT_S, seed: int = 1337, base_dir: Optional[str] = None) -> ExecResult:
+def run_snippet(code: str, input_json: Optional[Dict] = None, timeout_s: int = None, seed: int = None, base_dir: Optional[str] = None) -> ExecResult:
     """Execute code in Docker if available; otherwise subprocess with minimal harness."""
     if _docker_available():
         logger.info("Using Docker sandbox isolation (seed=%s, timeout=%s, base_dir=%s)", seed, timeout_s, base_dir)
@@ -165,8 +208,12 @@ def run_snippet(code: str, input_json: Optional[Dict] = None, timeout_s: int = D
         return _run_subprocess(code, input_json, timeout_s, seed)
 
 
-def _run_subprocess(code: str, input_json: Optional[Dict] = None, timeout_s: int = DEFAULT_TIMEOUT_S, seed: int = 1337) -> ExecResult:
+def _run_subprocess(code: str, input_json: Optional[Dict] = None, timeout_s: int = None, seed: int = None) -> ExecResult:
     """Execute code in a subprocess with a minimal harness (fallback)."""
+    # Use config defaults if not provided
+    timeout_s = timeout_s or DEFAULT_SANDBOX_CONFIG.default_timeout_s
+    seed = seed if seed is not None else DEFAULT_SANDBOX_CONFIG.seed
+
     harness_header = (
         "import json, os, random, sys, time\n"
         f"random.seed({seed})\n"

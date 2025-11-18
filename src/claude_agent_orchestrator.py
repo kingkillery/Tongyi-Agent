@@ -94,45 +94,29 @@ except ImportError:
                 return False
             return True
 
-from config import DEFAULT_CLAUDE_CONFIG
-from delegation_policy import DelegationPolicy, AgentBudget
-from verifier_gate import VerifierGate
-from tool_registry import ToolRegistry, ToolCall, ToolResult
+from model_config import DEFAULT_CLAUDE_CONFIG
+from delegation_policy import AgentBudget
+from orchestrator_base import BaseOrchestrator
+from tool_registry import ToolCall, ToolResult
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ClaudeAgentOrchestrator:
+class ClaudeAgentOrchestrator(BaseOrchestrator):
     """Claude Agent SDK-driven orchestrator with native tool calling capabilities."""
 
-    def __init__(self, root: str = "."):
+    def _initialize_client(self):
+        """Initialize Claude SDK client and components."""
         if not CLAUDE_SDK_AVAILABLE:
             raise ImportError("Claude Code SDK is required. Install with: pip install claude-code-sdk")
-
-        self.root = os.path.abspath(root)
-        self.tools = ToolRegistry(root=self.root)
 
         # Configure OpenRouter environment for Claude Code SDK
         self._configure_openrouter()
 
         # MCP server creation disabled temporarily as current SDK version doesn't support it
         # self.tools_server = self._create_tools_server()
-
-        # Initialize delegation policy for budgets (adapted as hooks)
-        self.policy = DelegationPolicy(
-            agent_budgets={
-                "search_code": AgentBudget(max_calls=10, max_tokens=2000),
-                "read_file": AgentBudget(max_calls=20, max_tokens=1000),
-                "run_sandbox": AgentBudget(max_calls=5, max_tokens=1500),
-                "search_papers": AgentBudget(max_calls=3, max_tokens=1000),
-                "clean_csv": AgentBudget(max_calls=2, max_tokens=800),
-                "clean_markdown": AgentBudget(max_calls=2, max_tokens=800),
-                "summarize_results": AgentBudget(max_calls=5, max_tokens=1200),
-            }
-        )
-        self.verifier_gate = VerifierGate()
 
     def _configure_openrouter(self):
         """Configure OpenRouter environment variables for Claude Code SDK."""
@@ -219,250 +203,6 @@ Response format:
         self.conversation_history = []
         self.tool_usage_stats = defaultdict(int)
         self.session_start_time = time.time()
-
-    def _create_tools_server(self):
-        """Create MCP server for existing Tongyi tools."""
-
-        @tool("search_code", "Search codebase with AST indexing", {
-            "query": str,
-            "paths": list,
-            "max_results": int
-        })
-        async def search_code_tool(args):
-            """Search code using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "query": args.get("query", ""),
-                    "paths": args.get("paths", []),
-                    "max_results": args.get("max_results", 20)
-                }
-                tool_call = ToolCall(
-                    name="search_code",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"search_code tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("read_file", "Read file contents safely", {
-            "path": str,
-            "start_line": int,
-            "end_line": int
-        })
-        async def read_file_tool(args):
-            """Read file using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "path": args.get("path", ""),
-                    "start_line": args.get("start_line"),
-                    "end_line": args.get("end_line")
-                }
-                tool_call = ToolCall(
-                    name="read_file",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"read_file tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("run_sandbox", "Execute code in isolated environment", {
-            "code": str,
-            "timeout_s": int,
-            "seed": int
-        })
-        async def run_sandbox_tool(args):
-            """Run code in sandbox using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "code": args.get("code", ""),
-                    "timeout_s": args.get("timeout_s", 30),
-                    "seed": args.get("seed", 1337)
-                }
-                tool_call = ToolCall(
-                    name="run_sandbox",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"run_sandbox tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("search_papers", "Search academic papers", {
-            "query": str,
-            "max_results": int,
-            "year_min": int
-        })
-        async def search_papers_tool(args):
-            """Search papers using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "query": args.get("query", ""),
-                    "max_results": args.get("max_results", 5),
-                    "year_min": args.get("year_min")
-                }
-                tool_call = ToolCall(
-                    name="search_papers",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"search_papers tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("clean_csv", "Clean CSV data files", {
-            "path": str,
-            "output": str,
-            "operations": list
-        })
-        async def clean_csv_tool(args):
-            """Clean CSV using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "path": args.get("path", ""),
-                    "output": args.get("output"),
-                    "operations": args.get("operations", [])
-                }
-                tool_call = ToolCall(
-                    name="clean_csv",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"clean_csv tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("clean_markdown", "Clean and format markdown", {
-            "path": str,
-            "output": str,
-            "collapse_empty": bool,
-            "normalize_timestamps": bool
-        })
-        async def clean_markdown_tool(args):
-            """Clean markdown using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "path": args.get("path", ""),
-                    "output": args.get("output"),
-                    "collapse_empty": args.get("collapse_empty", True),
-                    "normalize_timestamps": args.get("normalize_timestamps", True)
-                }
-                tool_call = ToolCall(
-                    name="clean_markdown",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"clean_markdown tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        @tool("summarize_results", "Summarize research findings", {
-            "context": str,
-            "style": str
-        })
-        async def summarize_results_tool(args):
-            """Summarize results using the existing tool registry."""
-            try:
-                # Map Claude SDK parameters to ToolRegistry parameters
-                mapped_args = {
-                    "context": args.get("context", args.get("content", "")),
-                    "style": args.get("style", "summary")
-                }
-                tool_call = ToolCall(
-                    name="summarize_results",
-                    parameters=mapped_args
-                )
-                result = self.tools.execute_tool(tool_call)
-                # Handle both ToolResult with content attribute and legacy execute_tool method
-                if hasattr(result, 'content'):
-                    content = result.content
-                elif hasattr(result, 'result'):
-                    content = str(result.result) if result.result else (result.error or "No content")
-                else:
-                    content = str(result)
-                return {"content": [{"type": "text", "text": content}]}
-            except Exception as e:
-                logger.error(f"summarize_results tool error: {e}")
-                return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
-
-        return create_sdk_mcp_server(
-            name="tongyi_tools",
-            tools=[
-                search_code_tool,
-                read_file_tool,
-                run_sandbox_tool,
-                search_papers_tool,
-                clean_csv_tool,
-                clean_markdown_tool,
-                summarize_results_tool
-            ]
-        )
-
-    def _setup_hooks(self):
-        """Setup hooks for budget management and monitoring.
-
-        Note: Hook functionality may not be available in current Claude Code SDK version.
-        This method returns empty dict for compatibility.
-        """
-        # For now, hooks are not configured due to SDK limitations
-        # Tool usage monitoring happens at the tool level instead
-        logger.info("Hooks not configured - using tool-level monitoring instead")
-        return {}
 
     async def process_query(self, query: str) -> str:
         """Process a user query using Claude Agent SDK."""

@@ -15,11 +15,11 @@ from typing import Any, Dict, List, Optional
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER, ModelRouter
+from model_config import DEFAULT_TONGYI_CONFIG, DEFAULT_MODEL_ROUTER, ModelRouter
 from delegation_clients import load_openrouter_client, AgentClientError
-from delegation_policy import DelegationPolicy, AgentBudget
-from verifier_gate import VerifierGate
-from tool_registry import ToolRegistry, ToolCall, ToolResult
+from delegation_policy import AgentBudget
+from orchestrator_base import BaseOrchestrator
+from tool_registry import ToolCall, ToolResult
 from react_parser import ReActParser
 
 # Configure logging
@@ -27,12 +27,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class TongyiOrchestrator:
+class TongyiOrchestrator(BaseOrchestrator):
     """Tongyi-driven orchestrator with tool calling capabilities."""
-    
-    def __init__(self, root: str = "."):
-        self.root = os.path.abspath(root)
-        self.tools = ToolRegistry(root=self.root)
+
+    def _initialize_client(self):
+        """Initialize Tongyi-specific client and components."""
         self.client = load_openrouter_client(
             api_key=DEFAULT_TONGYI_CONFIG.api_key,
             base_url=DEFAULT_TONGYI_CONFIG.base_url,
@@ -52,20 +51,6 @@ class TongyiOrchestrator:
             free_model=DEFAULT_TONGYI_CONFIG.free_model_name,
             free_interval=DEFAULT_TONGYI_CONFIG.free_call_interval,
         )
-
-        # Initialize delegation policy for budgets
-        self.policy = DelegationPolicy(
-            agent_budgets={
-                "search_code": AgentBudget(max_calls=10, max_tokens=2000),
-                "read_file": AgentBudget(max_calls=20, max_tokens=1000),
-                "run_sandbox": AgentBudget(max_calls=5, max_tokens=1500),
-                "search_papers": AgentBudget(max_calls=3, max_tokens=1000),
-                "clean_csv": AgentBudget(max_calls=2, max_tokens=800),
-                "clean_markdown": AgentBudget(max_calls=2, max_tokens=800),
-                "summarize_results": AgentBudget(max_calls=5, max_tokens=1200),
-            }
-        )
-        self.verifier_gate = VerifierGate()
         
         self.system_prompt = """You are Tongyi Agent, a research-grade AI assistant running as a local-first, tool-augmented reasoning engine.
 
@@ -101,7 +86,76 @@ Response format:
 
 Never fabricate tool outputs. Never guess when verifiable data can be retrieved.
 Terminate the reasoning loop only after all necessary information is gathered and verified."""
-    
+
+    def _execute_tool_call(
+        self,
+        tool_name: str,
+        parameters: dict,
+        tool_repeat_counts: dict,
+        tool_calls_made: list,
+        tool_call_id: Optional[str] = None
+    ) -> Optional[dict]:
+        """Unified tool execution with budget and repeat guards.
+
+        Returns a tool message dict ready to append to conversation, or None if execution should be skipped.
+        """
+        # Repeat guard
+        repeat_key = self._repeat_guard_key(tool_name, parameters)
+        tool_repeat_counts[repeat_key] += 1
+        if tool_repeat_counts[repeat_key] > 3:
+            warning_msg = (
+                f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
+                "skipping execution to avoid infinite loop."
+            )
+            logger.warning(warning_msg)
+            tool_message = {"role": "tool", "content": warning_msg}
+            if tool_call_id:
+                tool_message["tool_call_id"] = tool_call_id
+            return tool_message
+
+        # Budget check
+        if not self.policy.allow(tool_name):
+            error_msg = f"Tool {tool_name} budget exceeded"
+            logger.warning(error_msg)
+            tool_message = {"role": "tool", "content": error_msg}
+            if tool_call_id:
+                tool_message["tool_call_id"] = tool_call_id
+            return tool_message
+
+        # Execute tool
+        call = ToolCall(name=tool_name, parameters=parameters)
+        tool_start = time.time()
+        result = self.tools.execute_tool(call)
+        tool_duration = time.time() - tool_start
+
+        # Log tool execution
+        tool_calls_made.append({
+            "tool": tool_name,
+            "parameters": parameters,
+            "duration_ms": tool_duration * 1000,
+            "success": result.error is None
+        })
+        logger.info(f"Tool {tool_name} executed in {tool_duration:.2f}s")
+
+        # Format result
+        if result.error:
+            tool_response = result.error
+            logger.warning(f"Tool {tool_name} failed: {result.error}")
+        else:
+            # Serialize once and truncate if needed
+            serialized = json.dumps(result.result, indent=2)
+            if len(serialized) > 10000:  # 10KB limit
+                serialized = serialized[:10000] + "\n... (truncated)"
+            tool_response = serialized
+
+        tool_message = {
+            "role": "tool",
+            "content": tool_response
+        }
+        if tool_call_id:
+            tool_message["tool_call_id"] = tool_call_id
+        return tool_message
+
     def run(self, question: str) -> str:
         """Run the Tongyi-powered orchestrator."""
         logger.info(f"Starting Tongyi orchestrator for question: {question[:100]}...")
@@ -184,60 +238,11 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     else:
                         logger.error(f"Unsupported arguments type for tool {tool_name}: {type(raw_arguments)}")
                         continue
-                    
-                    # Prevent runaway repeats with identical tool + parameters
-                    repeat_key = self._repeat_guard_key(tool_name, parameters)
-                    tool_repeat_counts[repeat_key] += 1
-                    if tool_repeat_counts[repeat_key] > 3:
-                        warning_msg = (
-                            f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
-                            "skipping execution to avoid infinite loop."
-                        )
-                        logger.warning(warning_msg)
-                        tool_message = {"role": "tool", "content": warning_msg}
-                        if tool_call_id:
-                            tool_message["tool_call_id"] = tool_call_id
-                        messages.append(tool_message)
-                        continue
 
-                    # Check budget
-                    if not self.policy.allow(tool_name):
-                        error_msg = f"Tool {tool_name} budget exceeded"
-                        logger.warning(error_msg)
-                        tool_message = {"role": "tool", "content": error_msg}
-                        if tool_call_id:
-                            tool_message["tool_call_id"] = tool_call_id
-                        messages.append(tool_message)
-                        continue
-                    
-                    # Execute tool
-                    call = ToolCall(name=tool_name, parameters=parameters)
-                    tool_start = time.time()
-                    result = self.tools.execute_tool(call)
-                    tool_duration = time.time() - tool_start
-                    
-                    # Log tool execution
-                    tool_calls_made.append({
-                        "tool": tool_name,
-                        "parameters": parameters,
-                        "duration_ms": tool_duration * 1000,
-                        "success": result.error is None
-                    })
-                    logger.info(f"Tool {tool_name} executed in {tool_duration:.2f}s")
-                    
-                    # Add tool result to conversation
-                    if result.error:
-                        tool_response = result.error
-                        logger.warning(f"Tool {tool_name} failed: {result.error}")
-                    else:
-                        tool_response = json.dumps(result.result, indent=2)
-
-                    tool_message = {
-                        "role": "tool",
-                        "content": tool_response
-                    }
-                    if tool_call_id:
-                        tool_message["tool_call_id"] = tool_call_id
+                    # Execute tool using unified method
+                    tool_message = self._execute_tool_call(
+                        tool_name, parameters, tool_repeat_counts, tool_calls_made, tool_call_id
+                    )
                     messages.append(tool_message)
                 continue
             
@@ -248,50 +253,15 @@ Terminate the reasoning loop only after all necessary information is gathered an
                 if isinstance(tool_call, dict) and "tool" in tool_call:
                     tool_name = tool_call["tool"]
                     parameters = tool_call.get("parameters", {})
-                    
-                    # Prevent runaway repeats with identical tool + parameters
-                    repeat_key = self._repeat_guard_key(tool_name, parameters)
-                    tool_repeat_counts[repeat_key] += 1
-                    if tool_repeat_counts[repeat_key] > 3:
-                        warning_msg = (
-                            f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
-                            "skipping execution to avoid infinite loop."
-                        )
-                        logger.warning(warning_msg)
-                        messages.append({"role": "user", "content": warning_msg})
-                        continue
 
-                    # Check budget
-                    if not self.policy.allow(tool_name):
-                        error_msg = f"Tool {tool_name} budget exceeded"
-                        logger.warning(error_msg)
-                        messages.append({"role": "user", "content": error_msg})
-                        continue
-                    
-                    # Execute tool
-                    call = ToolCall(name=tool_name, parameters=parameters)
-                    tool_start = time.time()
-                    result = self.tools.execute_tool(call)
-                    tool_duration = time.time() - tool_start
-                    
-                    # Log tool execution
-                    tool_calls_made.append({
-                        "tool": tool_name,
-                        "parameters": parameters,
-                        "duration_ms": tool_duration * 1000,
-                        "success": result.error is None
-                    })
-                    logger.info(f"Tool {tool_name} executed in {tool_duration:.2f}s")
-                    
-                    # Add tool result to conversation
-                    if result.error:
-                        tool_response = f"Tool {tool_name} failed: {result.error}"
-                        logger.warning(f"Tool {tool_name} failed: {result.error}")
-                    else:
-                        tool_response = f"Tool {tool_name} returned: {json.dumps(result.result, indent=2)}"
-                    
+                    # Execute tool using unified method
+                    tool_message = self._execute_tool_call(
+                        tool_name, parameters, tool_repeat_counts, tool_calls_made
+                    )
+
+                    # JSON fallback uses assistant + user messages instead of tool message
                     messages.append({"role": "assistant", "content": response_text})
-                    messages.append({"role": "user", "content": tool_response})
+                    messages.append({"role": "user", "content": tool_message["content"]})
                     continue
             except (json.JSONDecodeError, TypeError):
                 # Try ReAct-style natural language parsing (fallback)
@@ -307,50 +277,14 @@ Terminate the reasoning loop only after all necessary information is gathered an
                         tool_name = block.action if isinstance(block.action, str) else str(block.action)
                         parameters = block.action_input
 
-                        # Prevent runaway repeats with identical tool + parameters
-                        repeat_key = self._repeat_guard_key(tool_name, parameters)
-                        tool_repeat_counts[repeat_key] += 1
-                        if tool_repeat_counts[repeat_key] > 3:
-                            warning_msg = (
-                                f"Tool {tool_name} called {tool_repeat_counts[repeat_key]} times with identical parameters; "
-                                "skipping execution to avoid infinite loop."
-                            )
-                            logger.warning(warning_msg)
-                            messages.append({"role": "user", "content": warning_msg})
-                            continue
-
-                        # Check budget
-                        if not self.policy.allow(tool_name):
-                            error_msg = f"Tool {tool_name} budget exceeded"
-                            logger.warning(error_msg)
-                            messages.append({"role": "user", "content": error_msg})
-                            continue
-
-                        # Execute tool
-                        call = ToolCall(name=tool_name, parameters=parameters)
-                        tool_start = time.time()
-                        result = self.tools.execute_tool(call)
-                        tool_duration = time.time() - tool_start
-
-                        # Log tool execution
-                        tool_calls_made.append({
-                            "tool": tool_name,
-                            "parameters": parameters,
-                            "duration_ms": tool_duration * 1000,
-                            "success": result.error is None
-                        })
-                        logger.info(f"Tool {tool_name} executed in {tool_duration:.2f}s (via ReAct)")
+                        # Execute tool using unified method
+                        tool_message = self._execute_tool_call(
+                            tool_name, parameters, tool_repeat_counts, tool_calls_made
+                        )
                         blocks_executed = True
 
-                        # Add tool result to conversation
-                        if result.error:
-                            tool_response = f"Error: {result.error}"
-                            logger.warning(f"Tool {tool_name} failed: {result.error}")
-                        else:
-                            tool_response = json.dumps(result.result, indent=2)
-
                         # Format as ReAct observation
-                        formatted_observation = self.react_parser.format_observation(tool_response, tool_name)
+                        formatted_observation = self.react_parser.format_observation(tool_message["content"], tool_name)
                         messages.append({"role": "user", "content": formatted_observation})
 
                     if blocks_executed:

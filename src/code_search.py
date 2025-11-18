@@ -5,8 +5,10 @@ definitions/usages as evidence alongside plain text matches.
 """
 from __future__ import annotations
 
+import linecache
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Set, Tuple
@@ -26,6 +28,8 @@ class CodeSearch:
         self.root = os.path.abspath(root)
         self.max_file_size = max_file_size
         self._sym_index = SymbolIndex(root=self.root, max_file_size=max_file_size)
+        self._file_cache: Optional[List[str]] = None
+        self._cache_mtime = 0.0
 
     def search(self, query: str, paths: Optional[Iterable[str]] = None, max_results: int = 10) -> List[SearchHit]:
         terms = [t for t in re.findall(r"\w+", query.lower()) if len(t) > 2]
@@ -61,10 +65,26 @@ class CodeSearch:
                 continue
         return hits
 
-    def _walk_all(self) -> Iterable[str]:
+    def _get_cached_files(self) -> List[str]:
+        """Return cached file list, rebuilding if stale (5min TTL)."""
+        current_time = time.time()
+        if self._file_cache is None or (current_time - self._cache_mtime) > 300:
+            self._file_cache = list(self._walk_all_uncached())
+            self._cache_mtime = current_time
+        return self._file_cache
+
+    def _walk_all_uncached(self) -> Iterable[str]:
+        """Walk directory tree without caching."""
         for dirpath, _, filenames in os.walk(self.root):
             for fname in filenames:
                 yield os.path.join(dirpath, fname)
+
+    def _walk_all(self) -> Iterable[str]:
+        """Walk all files, using cache when available."""
+        if self._file_cache is not None:
+            yield from self._file_cache
+        else:
+            yield from self._walk_all_uncached()
 
     def _is_text_file(self, path: str) -> bool:
         try:
@@ -112,14 +132,12 @@ class CodeSearch:
         return results
 
     def _read_line(self, path: str, line_no: int) -> str:
+        """Fast line reading using linecache."""
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                for idx, line in enumerate(fh, start=1):
-                    if idx == line_no:
-                        return line.strip()
-        except (FileNotFoundError, PermissionError, OSError):
+            line = linecache.getline(path, line_no)
+            return line.strip() if line else ""
+        except Exception:
             return ""
-        return ""
 
     def _has_hit(self, hits: List[SearchHit], path: str, line: int) -> bool:
         for h in hits:

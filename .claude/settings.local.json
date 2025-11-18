@@ -9,7 +9,8 @@
       "Bash(tongyi-cli --tools:*)",
       "Bash(timeout:*)",
       "Bash(dir:*)",
-      "Bash(tongyi-cli:*)"
+      "Bash(tongyi-cli:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

@@ -34,8 +34,9 @@ import random
 import threading
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import urllib.parse
 import urllib.request
@@ -330,27 +331,49 @@ class ScholarAdapter:
         return papers
 
     # -------- Orchestration with retries/fallbacks --------
+    def _query_with_retry(self, provider: Callable[[str], List[PaperMeta]], query: str) -> List[PaperMeta]:
+        """Query a provider with retry logic."""
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                return provider(query)
+            except Exception:
+                if attempt < MAX_RETRIES:
+                    time.sleep(_jitter_backoff(attempt))
+                continue
+        return []
+
     def search(self, query: str, k: int = 10) -> List[PaperMeta]:
+        """Search all providers in parallel, returning up to k unique results."""
         q = _norm_query(query)
         providers = [self._semantic_scholar, self._crossref, self._arxiv, self._openalex]
         results: List[PaperMeta] = []
         seen = set()
-        for provider in providers:
-            for attempt in range(1, MAX_RETRIES + 1):
+
+        # Query all providers in parallel with timeout
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_provider = {
+                executor.submit(self._query_with_retry, provider, q): provider
+                for provider in providers
+            }
+
+            # Collect results as they complete, with overall timeout
+            for future in as_completed(future_to_provider, timeout=15):
                 try:
-                    papers = provider(q)
+                    papers = future.result(timeout=5)
                     for p in papers:
                         key = (p.title.lower(), p.year or 0)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        results.append(p)
-                        if len(results) >= k:
-                            return results
-                    break  # provider succeeded (even if empty)
+                        if key not in seen:
+                            seen.add(key)
+                            results.append(p)
+                            if len(results) >= k:
+                                # Cancel remaining futures
+                                for f in future_to_provider:
+                                    f.cancel()
+                                return results
                 except Exception:
-                    time.sleep(_jitter_backoff(attempt))
+                    # Provider failed or timed out, continue with others
                     continue
+
         return results
 
 
