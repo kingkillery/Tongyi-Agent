@@ -194,3 +194,9 @@ htmlcov/
 # Local development
 .local/
 local/
+
+# Benchmarks output
+/benchmark_results.json
+
+# Windows device phantom file
+/nul
