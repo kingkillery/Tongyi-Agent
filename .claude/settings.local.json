@@ -10,7 +10,10 @@
       "Bash(timeout:*)",
       "Bash(dir:*)",
       "Bash(tongyi-cli:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(pytest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

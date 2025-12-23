@@ -346,33 +346,37 @@ class ScholarAdapter:
         """Search all providers in parallel, returning up to k unique results."""
         q = _norm_query(query)
         providers = [self._semantic_scholar, self._crossref, self._arxiv, self._openalex]
-        results: List[PaperMeta] = []
-        seen = set()
 
         # Query all providers in parallel with timeout
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_provider = {
-                executor.submit(self._query_with_retry, provider, q): provider
-                for provider in providers
+                executor.submit(self._query_with_retry, provider, q): (idx, provider)
+                for idx, provider in enumerate(providers)
             }
 
-            # Collect results as they complete, with overall timeout
+            # Collect all results with their provider priority
+            all_papers_with_priority: List[Tuple[int, PaperMeta]] = []
             for future in as_completed(future_to_provider, timeout=15):
                 try:
                     papers = future.result(timeout=5)
+                    priority = future_to_provider[future][0]
                     for p in papers:
-                        key = (p.title.lower(), p.year or 0)
-                        if key not in seen:
-                            seen.add(key)
-                            results.append(p)
-                            if len(results) >= k:
-                                # Cancel remaining futures
-                                for f in future_to_provider:
-                                    f.cancel()
-                                return results
+                        all_papers_with_priority.append((priority, p))
                 except Exception:
                     # Provider failed or timed out, continue with others
                     continue
+
+        # Sort by provider priority (semantic_scholar first) and deduplicate
+        all_papers_with_priority.sort(key=lambda x: x[0])
+        results: List[PaperMeta] = []
+        seen = set()
+        for priority, p in all_papers_with_priority:
+            key = (p.title.lower(), p.year or 0)
+            if key not in seen:
+                seen.add(key)
+                results.append(p)
+                if len(results) >= k:
+                    break
 
         return results
 

@@ -31,6 +31,18 @@ cd tongyi-agent
 pip install -e .
 ```
 
+### Validate your setup
+
+After installation, verify your configuration:
+
+```bash
+# Run all validations including API connectivity
+python -m config_validator --check-all
+
+# For help with setup issues
+# See SETUP_TROUBLESHOOTING.md
+```
+
 ### Using pip
 
 ```bash
@@ -271,6 +283,7 @@ For detailed information about the interactive CLI features, commands, and confi
 
 - [Agent Lightning Integration Summary](OPENROUTER_INTEGRATION_SUMMARY.md)
 - [Installation Guide](INSTALLATION_GUIDE.md)
+- [Setup & Troubleshooting Guide](SETUP_TROUBLESHOOTING.md)
 - [Model Management Guide](MODEL_MANAGEMENT_GUIDE.md)
 - [Security Fixes Summary](SUBTLE_BUG_FIXES_SUMMARY.md)
 

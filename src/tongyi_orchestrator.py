@@ -21,6 +21,16 @@ from delegation_policy import AgentBudget
 from orchestrator_base import BaseOrchestrator
 from tool_registry import ToolCall, ToolResult
 from react_parser import ReActParser
+from error_handler import (
+    APIKeyError,
+    NetworkError,
+    ModelNotFoundError,
+    TimeoutError,
+    retry_on_failure,
+    FallbackHandler,
+    format_error_for_user,
+    get_api_unavailable_message,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -157,7 +167,15 @@ Terminate the reasoning loop only after all necessary information is gathered an
         return tool_message
 
     def run(self, question: str) -> str:
-        """Run the Tongyi-powered orchestrator."""
+        """
+        Run the Tongyi-powered orchestrator with retry and fallback support.
+
+        Args:
+            question: User's question to answer
+
+        Returns:
+            Answer string or user-friendly error message
+        """
         logger.info(f"Starting Tongyi orchestrator for question: {question[:100]}...")
 
         
@@ -174,7 +192,7 @@ Terminate the reasoning loop only after all necessary information is gathered an
         while iteration < max_iterations:
             iteration += 1
             start_time = time.time()
-            
+
             try:
                 # Prepare tools for function calling
                 tools_schemas = [
@@ -188,21 +206,32 @@ Terminate the reasoning loop only after all necessary information is gathered an
                     }
                     for tool in self.tools.get_tools()
                 ]
-                
-                response = self.client.chat(
-                    messages,  # Pass full messages array for multi-turn conversation
-                    model=self.model_router.next_model(),
-                    temperature=DEFAULT_TONGYI_CONFIG.temperature,
-                    top_p=DEFAULT_TONGYI_CONFIG.top_p,
-                    repetition_penalty=DEFAULT_TONGYI_CONFIG.repetition_penalty,
-                    max_tokens=min(4096, DEFAULT_TONGYI_CONFIG.max_tokens),
-                    tools=tools_schemas,
+
+                # Add retry with exponential backoff for API calls
+                @retry_on_failure(
+                    max_retries=3,
+                    base_delay=1.0,
+                    max_delay=15.0,
+                    on_retry=lambda attempt, err: logger.info(f"Retry attempt {attempt} for API call: {err}")
                 )
-                
+                def make_api_call():
+                    return self.client.chat(
+                        messages,  # Pass full messages array for multi-turn conversation
+                        model=self.model_router.next_model(),
+                        temperature=DEFAULT_TONGYI_CONFIG.temperature,
+                        top_p=DEFAULT_TONGYI_CONFIG.top_p,
+                        repetition_penalty=DEFAULT_TONGYI_CONFIG.repetition_penalty,
+                        max_tokens=min(4096, DEFAULT_TONGYI_CONFIG.max_tokens),
+                        tools=tools_schemas,
+                    )
+
+                response = make_api_call()
+
                 logger.info(f"Tongyi response received in {time.time() - start_time:.2f}s")
-                
+
             except AgentClientError as e:
                 logger.error(f"Error calling Tongyi: {e}")
+                # Return user-friendly error message
                 return self._offline_response(question, str(e))
             
             # Check if response contains tool calls (OpenRouter format)

@@ -16,6 +16,15 @@ from typing import Any, Dict, List, Optional
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from error_handler import (
+    APIKeyError,
+    NetworkError,
+    TimeoutError,
+    get_api_unavailable_message,
+    get_timeout_message,
+    format_error_for_user,
+)
+
 try:
     from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
     CLAUDE_SDK_AVAILABLE = True
@@ -330,6 +339,46 @@ Response format:
         self.tool_usage_stats.clear()
         self.session_start_time = time.time()
         logger.info("Session reset")
+
+    def run(self, question: str) -> str:
+        """
+        Execute orchestration to answer the question using Claude SDK.
+
+        Args:
+            question: User's question/query to answer
+
+        Returns:
+            Final answer as a string or user-friendly error message
+        """
+        logger.info(f"Starting Claude SDK orchestrator for question: {question[:100]}...")
+
+        try:
+            # Handle nested event loops (common in Jupyter notebooks or async contexts)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    logger.info("Applied nest_asyncio for nested event loop")
+            except RuntimeError:
+                # No event loop exists, asyncio.run() will create one
+                pass
+
+            # Run the async process_query method
+            answer = asyncio.run(self.process_query(question))
+
+            logger.info("Claude SDK orchestrator completed successfully")
+            return answer
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout in Claude SDK orchestrator: {e}")
+            return get_timeout_message(120)
+        except (ImportError, ConnectionError) as e:
+            logger.error(f"Connection error in Claude SDK orchestrator: {e}")
+            return format_error_for_user(e)
+        except Exception as e:
+            logger.error(f"Error in Claude SDK orchestrator: {e}")
+            return format_error_for_user(e, include_traceback=False)
 
     async def __aenter__(self):
         """Async context manager entry."""

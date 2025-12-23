@@ -8,8 +8,23 @@ from typing import Any, Dict, Optional
 
 import requests
 
+# Import centralized error handling
+from error_handler import (
+    APIKeyError,
+    ModelNotFoundError,
+    NetworkError,
+    RateLimitError,
+    TimeoutError,
+    get_api_unavailable_message,
+    get_invalid_api_key_message,
+    get_rate_limit_message,
+    get_timeout_message,
+    is_retryable_error,
+)
+
 
 class AgentClientError(RuntimeError):
+    """Base error class for agent client failures."""
     pass
 
 
@@ -129,29 +144,30 @@ class OpenRouterClient:
         return status_code in {408, 425, 429, 500, 502, 503, 504}
 
     def _format_http_error(self, resp: requests.Response) -> str:
+        """Format HTTP error with user-friendly messages using centralized error handling."""
         status = resp.status_code
         body_preview = resp.text.strip().replace("\n", " ")[:300] or "<empty response>"
-        hints = []
 
+        # Use centralized error messages for common error types
         if status in {401, 403}:
-            hints.append("Authentication failed. Verify OPENROUTER_API_KEY and rerun the config validator (python -m config_validator --check-openrouter).")
+            return get_invalid_api_key_message()
         elif status == 404:
-            hints.append("Requested model or endpoint was not found. Confirm the model name in models.ini and run 'tongyi-cli models list'.")
+            return get_model_unavailable_message("requested endpoint or model")
         elif status == 429:
-            hints.append("Rate limit hit. Reduce concurrent calls or increase fallback interval in models.ini.")
+            return get_rate_limit_message()
         elif status >= 500:
-            hints.append("OpenRouter service is temporarily unavailable. Wait a few minutes and retry or switch to the fallback model.")
+            return get_api_unavailable_message()
         else:
-            hints.append("Review your request parameters and try again.")
-
-        hints.append("Run 'python -m config_validator --check-openrouter' for a full diagnostic report.")
-        hint_text = " ".join(hints)
-
-        request_id = resp.headers.get("x-request-id")
-        if request_id:
-            hint_text += f" (request id: {request_id})"
-
-        return f"OpenRouter error {status}: {body_preview}. {hint_text}"
+            # Generic error with minimal guidance
+            hints = [
+                "Review your request parameters and try again.",
+                "Run 'python -m config_validator --check-openrouter' for diagnostics.",
+            ]
+            hint_text = " ".join(hints)
+            request_id = resp.headers.get("x-request-id")
+            if request_id:
+                hint_text += f" (request id: {request_id})"
+            return f"OpenRouter error {status}: {body_preview}. {hint_text}"
 
 
 def load_openrouter_client(api_key: Optional[str] = None, base_url: Optional[str] = None) -> Optional[OpenRouterClient]:

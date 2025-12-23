@@ -2,7 +2,10 @@
 
 Scope: Entire repository. This file defines conventions, patterns, and guardrails for agents and humans working on this codebase. Keep outputs terse; prefer structure over prose. Optimize for token and time efficiency.
 
+**CRITICAL: Keep PLAN.md Updated**
 - Roadmap & TODOs live in `PLAN.md`. Update that file (not @todo.md) when interfaces, dependencies, or targets change, then reflect any operating guidance deltas here.
+- When working on any task, first check PLAN.md for current priorities and workstreams. If your task changes interfaces, adds dependencies, or modifies targets, UPDATE PLAN.md IMMEDIATELY.
+- Beta release workstreams (BETA-1 through BETA-7) take priority over DeepResearch core workstreams (H0-H6).
 
 - ReAct migration (2025-10-31): staged orchestrator is being replaced by a model-driven loop. System prompt advertises tools; the model emits `<tool_call>` blocks; orchestrator parses, executes, and feeds `<tool_response>` back until `<answer>` terminates. CodeSearch remains available but no longer drives the flow.
 

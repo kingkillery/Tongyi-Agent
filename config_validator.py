@@ -343,17 +343,24 @@ def run_validation(root: Path, check_openrouter: bool = False) -> ValidationRepo
     return report
 
 
-def print_report(report: ValidationReport) -> None:
+def print_report(report: ValidationReport, verbose: bool = False) -> None:
+    """Print validation report with optional verbose output."""
     print(f"Configuration validation for {report.root}\n")
     icon_map = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]", "INFO": "[INFO]"}
     suggestions: List[str] = []
+
     for check in report.checks:
+        # Hide INFO checks in non-verbose mode
+        if not verbose and check.status == "INFO":
+            continue
+
         icon = icon_map.get(check.status, "•")
         print(f"{icon} {check.name}: {check.details}")
         if check.suggestion:
             print(f"    Suggestion: {check.suggestion}")
             if check.status != "PASS":
                 suggestions.append(check.suggestion)
+
     if report.passed:
         print("\nAll critical checks passed.")
     else:
@@ -368,20 +375,50 @@ def print_report(report: ValidationReport) -> None:
                 print(f"  - {tip}")
 
 
+def run_models_validation(root: Path) -> ValidationReport:
+    """Run only models.ini configuration validation."""
+    report = ValidationReport(root=str(root.resolve()))
+    checks, _ = validate_models_ini(root)
+    report.checks.extend(checks)
+    return report
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Validate Tongyi Agent configuration")
+    parser = argparse.ArgumentParser(
+        description="Validate Tongyi Agent configuration",
+        epilog="""
+Examples:
+  python -m config_validator --check-all         # Run all validations including OpenRouter connectivity
+  python -m config_validator --check-openrouter    # Test OpenRouter connection only
+  python -m config_validator --check-models       # Validate models.ini only
+  python -m config_validator --verbose             # Show detailed output including INFO checks
+        """
+    )
     parser.add_argument("--root", default=Path(__file__).resolve().parent, help="Project root (default: repository root)")
     parser.add_argument("--check-openrouter", action="store_true", help="Test OpenRouter connectivity and model availability")
+    parser.add_argument("--check-models", action="store_true", help="Verify models.ini configuration only")
+    parser.add_argument("--check-all", action="store_true", help="Run all validations including OpenRouter connectivity")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output including INFO checks")
     parser.add_argument("--json", action="store_true", help="Output JSON instead of human-readable text")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    report = run_validation(root, check_openrouter=args.check_openrouter)
+
+    # Determine which validation to run
+    if args.check_models and not args.check_all:
+        # Only validate models.ini
+        report = run_models_validation(root)
+    elif args.check_openrouter or args.check_all:
+        # Full validation with OpenRouter connectivity
+        report = run_validation(root, check_openrouter=True)
+    else:
+        # Basic validation without OpenRouter connectivity
+        report = run_validation(root, check_openrouter=False)
 
     if args.json:
         print(json.dumps(report.as_dict(), indent=2))
     else:
-        print_report(report)
+        print_report(report, verbose=args.verbose)
 
     if not report.passed:
         has_fail = any(check.status == "FAIL" for check in report.checks)

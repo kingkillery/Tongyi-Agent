@@ -157,6 +157,8 @@ Tongyi-Agent/
 
 ## 🐛 **Troubleshooting**
 
+**Need more help?** See [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) for comprehensive troubleshooting guide.
+
 ### **Command Not Found:**
 ```bash
 # Check if pip installed in current Python environment
@@ -186,6 +188,18 @@ from src.model_manager import model_manager
 print('Available models:', len(model_manager.list_available_models()))
 print('Current model:', model_manager.get_current_model())
 "
+```
+
+### **Configuration Issues:**
+```bash
+# Validate your configuration
+python -m config_validator --check-all
+
+# Test API key and connectivity
+python -m config_validator --check-openrouter
+
+# Validate models.ini
+python -m config_validator --check-models
 ```
 
 ## 🎉 **Success!**

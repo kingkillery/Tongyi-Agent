@@ -40,6 +40,9 @@ from config.timeouts import DEFAULT_TIMEOUTS  # noqa: E402
 _DOCKER_IMAGE_PULLED = False
 _DOCKER_IMAGE_PULL_LOCK = threading.Lock()
 
+# STDOUT/STDERR size cap for security and performance (64KB)
+STDIO_LIMIT = 64 * 1024
+
 # Configure audit logger
 logger = logging.getLogger(__name__)
 if not logger.handlers:

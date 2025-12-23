@@ -3,6 +3,7 @@ Tests for Tongyi-powered orchestrator with tool calling.
 """
 import json
 import pytest
+from pydantic import ValidationError
 from unittest.mock import Mock, patch, MagicMock
 
 from src.tongyi_orchestrator import TongyiOrchestrator
@@ -28,12 +29,13 @@ class TestTongyiOrchestrator:
         """Test that config validation happens at import time via Pydantic validation."""
         # The API key validation happens when DEFAULT_TONGYI_CONFIG is created
         # at module import time through Pydantic validation + field_validator
-        with patch('config.os.getenv', return_value=None):
-            # This should cause ValidationError when config module is imported
-            with pytest.raises(Exception):  # Catch ValidationError or SystemExit
+        with patch('model_config.os.getenv', return_value=None):
+            # This should cause ValidationError when model_config module is imported
+            # because api_key: str is required and None is not a valid string
+            with pytest.raises(ValidationError):
                 import importlib
-                import config
-                importlib.reload(config)
+                import model_config
+                importlib.reload(model_config)
     
     def test_init_handles_client_failure(self):
         """Test that orchestrator handles client initialization failure."""

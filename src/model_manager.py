@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from config import OpenRouterModels, ModelConfig, DEFAULT_CLAUDE_CONFIG
+from error_handler import (
+    ValidationError,
+    validate_model_name,
+    get_invalid_input_message,
+)
 
 
 class ModelManager:
@@ -45,13 +50,39 @@ class ModelManager:
         return self.preferences.get('current_model', DEFAULT_CLAUDE_CONFIG.model_name)
 
     def set_model(self, model_name: str) -> bool:
-        """Set the current model and save preference"""
-        if model_name in self.available_models:
-            self.preferences['current_model'] = model_name
-            self.preferences['last_changed'] = str(Path.cwd())  # Track where changed
-            self._save_preferences()
-            return True
-        return False
+        """
+        Set the current model and save preference.
+
+        Args:
+            model_name: Name of the model to set
+
+        Returns:
+            True if successful, False if model not found
+
+        Raises:
+            ValidationError: If model_name is invalid
+        """
+        # Validate model name format
+        if not model_name or not model_name.strip():
+            raise ValidationError(
+                get_invalid_input_message("model name", model_name, "a non-empty string")
+            )
+
+        model_name = model_name.strip()
+
+        if model_name not in self.available_models:
+            # Provide helpful suggestion with available models
+            available_sample = ", ".join(list(self.available_models.keys())[:5])
+            raise ValidationError(
+                f"Model '{model_name}' is not available.\n\n"
+                f"Available models include: {available_sample}, ...\n\n"
+                f"Run 'tongyi-cli models list' to see all available models."
+            )
+
+        self.preferences['current_model'] = model_name
+        self.preferences['last_changed'] = str(Path.cwd())  # Track where changed
+        self._save_preferences()
+        return True
 
     def get_model_info(self, model_name: Optional[str] = None) -> Optional[ModelConfig]:
         """Get detailed information about a model"""

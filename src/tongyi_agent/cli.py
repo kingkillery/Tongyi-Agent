@@ -9,6 +9,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
+# Import error handling
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__))))
+from error_handler import (
+    ValidationError,
+    validate_directory_path,
+    validate_question,
+    format_error_for_user,
+)
+
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__))))
 
@@ -80,16 +90,27 @@ console = Console()
 
 
 def ensure_valid_root_path(raw_path: str) -> str:
-    """Resolve and validate the project root path."""
-    resolved = os.path.abspath(raw_path)
-    if os.path.isdir(resolved):
-        return resolved
-    if not os.path.exists(resolved):
-        reason = "does not exist"
-    else:
-        reason = "is not a directory"
-    _print_root_error(resolved, reason)
-    return resolved  # Unreachable but keeps type checkers happy
+    """
+    Resolve and validate the project root path.
+
+    Args:
+        raw_path: Path to validate
+
+    Returns:
+        Absolute, validated path
+
+    Raises:
+        ValidationError: If path is invalid
+    """
+    try:
+        return validate_directory_path(raw_path, must_exist=False)
+    except ValidationError as e:
+        # The validation already includes helpful error messages
+        if RICH_AVAILABLE:
+            console.print(f"[red]{str(e)}[/red]")
+        else:
+            print(f"Error: {str(e)}")
+        raise SystemExit(2)
 
 
 def _print_root_error(resolved: str, reason: str) -> None:
@@ -597,7 +618,14 @@ def interactive_mode(root: str = "."):
             
             if not question:
                 continue
-            
+
+            # Validate question length
+            try:
+                question = validate_question(question, min_length=3)
+            except ValidationError as e:
+                console.print(f"[yellow]{str(e)}[/yellow]")
+                continue
+
             # Check for special commands
             if process_command(question):
                 if question.lower() in ['exit', 'quit', 'q']:
