@@ -7,7 +7,7 @@ import readline
 import atexit
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 # Import error handling
 import sys
@@ -136,7 +136,14 @@ class Session:
         self.conversation_history: List[Dict] = []
         self.session_start = datetime.now()
         self.load_history()
-    
+
+        # Performance metrics
+        self.api_calls: int = 0
+        self.api_calls_from_cache: int = 0
+        self.response_times: List[float] = []
+        self.tool_usage: Dict[str, int] = {}
+        self.memory_warnings: int = 0
+
     def load_history(self):
         """Load conversation history from file."""
         if self.history_file.exists():
@@ -146,7 +153,7 @@ class Session:
                     self.conversation_history = data.get('history', [])
             except (json.JSONDecodeError, IOError):
                 self.conversation_history = []
-    
+
     def save_history(self):
         """Save conversation history to file."""
         try:
@@ -157,21 +164,72 @@ class Session:
                 }, f, indent=2)
         except IOError:
             pass  # Silently fail if can't save
-    
-    def add_exchange(self, question: str, answer: str, tool_calls: List[Dict] = None):
+
+    def add_exchange(self, question: str, answer: str, tool_calls: List[Dict] = None, response_time: float = None, from_cache: bool = False):
         """Add a question-answer exchange to history."""
+        # Track metrics
+        if response_time:
+            self.response_times.append(response_time)
+
+        # Track tool usage
+        if tool_calls:
+            for call in tool_calls:
+                tool_name = call.get('tool', 'unknown')
+                self.tool_usage[tool_name] = self.tool_usage.get(tool_name, 0) + 1
+
         self.conversation_history.append({
             'timestamp': datetime.now().isoformat(),
             'question': question,
             'answer': answer,
-            'tool_calls': tool_calls or []
+            'tool_calls': tool_calls or [],
+            'response_time': response_time,
+            'from_cache': from_cache
         })
-    
+
+    def track_api_call(self, from_cache: bool = False, response_time: float = None):
+        """Track API call metrics."""
+        self.api_calls += 1
+        if from_cache:
+            self.api_calls_from_cache += 1
+        if response_time:
+            self.response_times.append(response_time)
+
+    def track_tool_usage(self, tool_name: str):
+        """Track tool usage statistics."""
+        self.tool_usage[tool_name] = self.tool_usage.get(tool_name, 0) + 1
+
+    def track_memory_warning(self):
+        """Increment memory warning counter."""
+        self.memory_warnings += 1
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics summary."""
+        avg_response_time = None
+        if self.response_times:
+            avg_response_time = sum(self.response_times) / len(self.response_times)
+
+        total_calls = self.api_calls
+        cache_hit_rate = None
+        if total_calls > 0:
+            cache_hit_rate = (self.api_calls_from_cache / total_calls) * 100
+
+        return {
+            'session_duration': str(datetime.now() - self.session_start).split('.')[0],
+            'total_exchanges': len(self.conversation_history),
+            'api_calls': total_calls,
+            'api_calls_from_cache': self.api_calls_from_cache,
+            'cache_hit_rate': cache_hit_rate,
+            'avg_response_time': avg_response_time,
+            'tool_usage': self.tool_usage,
+            'memory_warnings': self.memory_warnings,
+            'history_file': str(self.history_file)
+        }
+
     def get_recent_context(self, limit: int = 5) -> str:
         """Get recent conversation context as string."""
         if not self.conversation_history:
             return ""
-        
+
         recent = self.conversation_history[-limit:]
         context = "Recent conversation context:\n"
         for i, exchange in enumerate(recent, 1):
@@ -249,28 +307,131 @@ def show_history():
         console.print(f"[dim]A:[/dim] {exchange['answer'][:150]}...")
 
 def show_status():
-    """Display session status."""
+    """Display session status with performance metrics."""
+    metrics = session.get_performance_metrics()
     session_duration = datetime.now() - session.session_start
-    
+
     if RICH_AVAILABLE:
+        # Session Status table
         status_table = Table(title="Session Status")
         status_table.add_column("Property", style="cyan")
         status_table.add_column("Value", style="white")
-        
-        status_table.add_row("Session Duration", str(session_duration).split('.')[0])
-        status_table.add_row("Total Exchanges", str(len(session.conversation_history)))
-        status_table.add_row("History File", str(session.history_file))
+
+        status_table.add_row("Session Duration", metrics['session_duration'])
+        status_table.add_row("Total Exchanges", str(metrics['total_exchanges']))
+        status_table.add_row("History File", str(metrics['history_file']))
         status_table.add_row("Rich UI", "Enabled" if RICH_AVAILABLE else "Disabled")
-        
+
         console.print(status_table)
+
+        # Performance Metrics table
+        perf_table = Table(title="Performance Metrics")
+        perf_table.add_column("Metric", style="cyan")
+        perf_table.add_column("Value", style="white")
+
+        # API metrics
+        api_calls = metrics['api_calls']
+        cache_calls = metrics['api_calls_from_cache']
+        perf_table.add_row("API Calls", str(api_calls))
+        perf_table.add_row("API Calls from Cache", str(cache_calls))
+
+        # Cache hit rate
+        cache_rate = metrics['cache_hit_rate']
+        if cache_rate is not None:
+            cache_str = f"{cache_rate:.1f}%"
+            cache_style = "green" if cache_rate > 50 else "yellow"
+        else:
+            cache_str = "N/A"
+            cache_style = "dim"
+        perf_table.add_row("Cache Hit Rate", cache_str, style=cache_style)
+
+        # Average response time
+        avg_time = metrics['avg_response_time']
+        if avg_time is not None:
+            time_str = f"{avg_time:.2f}s"
+            time_style = "green" if avg_time < 3 else "yellow" if avg_time < 10 else "red"
+        else:
+            time_str = "N/A"
+            time_style = "dim"
+        perf_table.add_row("Avg Response Time", time_str, style=time_style)
+
+        # Memory warnings
+        mem_warnings = metrics['memory_warnings']
+        mem_style = "green" if mem_warnings == 0 else "yellow" if mem_warnings < 5 else "red"
+        perf_table.add_row("Memory Warnings", str(mem_warnings), style=mem_style)
+
+        console.print(perf_table)
+
+        # Tool Usage table
+        tool_usage = metrics.get('tool_usage', {})
+        if tool_usage:
+            tool_table = Table(title="Tool Usage")
+            tool_table.add_column("Tool", style="cyan")
+            tool_table.add_column("Calls", style="white")
+
+            # Sort by usage count (descending)
+            sorted_tools = sorted(tool_usage.items(), key=lambda x: x[1], reverse=True)
+            for tool_name, count in sorted_tools[:10]:  # Show top 10
+                tool_table.add_row(tool_name, str(count))
+
+            console.print(tool_table)
+
+        # Cache Stats table
+        try:
+            from cache import get_all_stats
+            cache_stats = get_all_stats()
+            if cache_stats:
+                cache_table = Table(title="Cache Statistics")
+                cache_table.add_column("Cache", style="cyan")
+                cache_table.add_column("Entries", style="white")
+                cache_table.add_column("Hits", style="white")
+                cache_table.add_column("Misses", style="white")
+                cache_table.add_column("Hit Rate", style="white")
+
+                for cache_name, stats in cache_stats.items():
+                    entries = stats.get('total_entries', 0)
+                    hits = stats.get('hits', 0)
+                    misses = stats.get('misses', 0)
+                    rate = stats.get('hit_rate', 0.0)
+                    rate_str = f"{rate:.1%}" if rate > 0 else "N/A"
+
+                    cache_table.add_row(
+                        cache_name.title(),
+                        str(entries),
+                        str(hits),
+                        str(misses),
+                        rate_str
+                    )
+
+                console.print(cache_table)
+        except ImportError:
+            pass  # Cache module not available
+
     else:
+        # Basic text output
+        cache_hit_rate_str = f"{metrics['cache_hit_rate']:.1f}%" if metrics['cache_hit_rate'] else 'N/A'
+        avg_response_time_str = f"{metrics['avg_response_time']:.2f}s" if metrics['avg_response_time'] else 'N/A'
+
         print(f"""
 Session Status:
-  Duration: {str(session_duration).split('.')[0]}
-  Exchanges: {len(session.conversation_history)}
-  History File: {session.history_file}
+  Duration: {metrics['session_duration']}
+  Exchanges: {metrics['total_exchanges']}
+  History File: {metrics['history_file']}
   Rich UI: {'Enabled' if RICH_AVAILABLE else 'Disabled'}
-        """)
+
+Performance Metrics:
+  API Calls: {metrics['api_calls']}
+  API Calls from Cache: {metrics['api_calls_from_cache']}
+  Cache Hit Rate: {cache_hit_rate_str}
+  Avg Response Time: {avg_response_time_str}
+  Memory Warnings: {metrics['memory_warnings']}
+""")
+
+        tool_usage = metrics.get('tool_usage', {})
+        if tool_usage:
+            print("  Tool Usage:")
+            for tool_name, count in sorted(tool_usage.items(), key=lambda x: x[1], reverse=True):
+                print(f"    {tool_name}: {count}")
 
 def show_tools():
     """Display available tools."""

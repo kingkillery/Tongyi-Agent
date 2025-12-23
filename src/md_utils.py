@@ -3,20 +3,30 @@ Markdown Utilities for Cleaning Information Dumps
 --------------------------------------------------
 Provides helpers to parse, structure, and clean daily markdown dumps.
 All functions are pure and avoid network/external calls.
+
+Memory optimizations:
+- Stream large files instead of loading all at once
+- Check file size before processing
+- Use generators where possible
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Generator
 
 from markdown import markdown
 import yaml
 
 
 logger = logging.getLogger(__name__)
+
+# File size threshold for warning (10MB)
+LARGE_FILE_THRESHOLD = 10 * 1024 * 1024
 
 
 @dataclass
@@ -36,10 +46,50 @@ class MDInfo:
     line_count: int
 
 
-def parse_markdown(path: str) -> MDInfo:
-    """Parse markdown into sections and extract frontmatter."""
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+def _check_file_size(path: str) -> bool:
+    """Check file size and warn if it's large. Returns True if safe to proceed."""
+    try:
+        size = os.path.getsize(path)
+        if size > LARGE_FILE_THRESHOLD:
+            logger.warning(
+                "Large markdown file detected: %s (%.2f MB). Processing may be slow.",
+                path, size / (1024 * 1024)
+            )
+        return size <= LARGE_FILE_THRESHOLD * 5  # Allow up to 5x threshold with warning
+    except OSError as e:
+        logger.warning("Could not check file size for %s: %s", path, e)
+        return True  # Proceed anyway if size check fails
+
+
+def _read_file_streaming(path: str, max_lines: Optional[int] = None) -> Generator[str, None, None]:
+    """Read file line by line to reduce memory usage."""
+    line_count = 0
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if max_lines is not None and line_count >= max_lines:
+                break
+            yield line
+            line_count += 1
+
+
+def parse_markdown(path: str, max_lines: Optional[int] = None) -> MDInfo:
+    """
+    Parse markdown into sections and extract frontmatter.
+
+    Args:
+        path: Path to markdown file
+        max_lines: Optional maximum lines to read (for memory optimization)
+    """
+    # Check file size before processing
+    _check_file_size(path)
+
+    # Read file content
+    if max_lines is not None:
+        text = "".join(_read_file_streaming(path, max_lines))
+    else:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+
     # Split frontmatter
     frontmatter = None
     body = text

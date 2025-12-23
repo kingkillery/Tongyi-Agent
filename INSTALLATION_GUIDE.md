@@ -223,4 +223,145 @@ tongyi "Hello, world! What can you do?"
 4. **Check out the model management** features
 5. **Test with your own projects** using `--root` flag
 
+## 🔧 **Common Issues**
+
+### **"Command not found: tongyi"**
+
+**Problem:** The `tongyi` command is not recognized.
+
+**Solutions:**
+```bash
+# Try using python module instead
+python -m tongyi_agent.cli --help
+
+# Reinstall the package
+pip install -e .
+
+# Check if package is installed
+pip list | grep tongyi
+```
+
+**More details:** See [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) - "Command Not Found" section
+
+---
+
+### **"OPENROUTER_API_KEY not set"**
+
+**Problem:** API key is not configured.
+
+**Solutions:**
+```bash
+# Create .env file in project root
+echo "OPENROUTER_API_KEY=sk-or-v1-your-key-here" > .env
+
+# Or export as environment variable
+export OPENROUTER_API_KEY=sk-or-v1-your-key-here  # Linux/macOS
+set OPENROUTER_API_KEY=sk-or-v1-your-key-here       # Windows cmd
+```
+
+**More details:** See [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) - "API Key Issues" section
+
+---
+
+### **"Import errors" or "Module not found"**
+
+**Problem:** Python can't find the required modules.
+
+**Solutions:**
+```bash
+# Reinstall from project root
+cd /path/to/tongyi-agent
+pip install -e .
+
+# Install all dependencies
+pip install -r requirements.txt
+
+# Verify Python path
+python -c "import sys; print('\n'.join(sys.path))"
+```
+
+---
+
+### **"Connection timeout" or "Network errors"**
+
+**Problem:** Cannot connect to OpenRouter API.
+
+**Solutions:**
+```bash
+# Check internet connection
+ping openrouter.ai
+
+# Test connectivity
+curl https://openrouter.ai/api/v1/models
+
+# Check firewall/proxy settings
+# Ensure HTTPS traffic to openrouter.ai is allowed
+```
+
+**More details:** See [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) - "Network Issues" section
+
+---
+
+### **"Model not available" errors**
+
+**Problem:** The specified model cannot be found.
+
+**Solutions:**
+```bash
+# List available models
+tongyi --models-info
+
+# Use a common model
+tongyi "Your question" --model anthropic/claude-3.5-haiku
+
+# Validate model configuration
+python -m config_validator --check-models
+```
+
+---
+
+### **Validation fails with "401 Unauthorized"**
+
+**Problem:** API key is invalid or expired.
+
+**Solutions:**
+```bash
+# Verify API key is correct
+cat .env | grep OPENROUTER_API_KEY
+
+# Test API key directly
+curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+     https://openrouter.ai/api/v1/models
+
+# Generate a new key at https://openrouter.ai/keys
+```
+
+**More details:** See [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) - "Authentication Issues" section
+
+---
+
+### **Other Issues**
+
+For more comprehensive troubleshooting:
+
+1. **Run full validation:**
+   ```bash
+   python -m config_validator --check-all --verbose
+   ```
+
+2. **Check error logs:**
+   ```bash
+   cat error_log.md
+   ```
+
+3. **Consult full troubleshooting guide:**
+   - [SETUP_TROUBLESHOOTING.md](SETUP_TROUBLESHOOTING.md) - Complete troubleshooting guide
+   - [CLI_GUIDE.md](CLI_GUIDE.md) - CLI-specific issues
+   - [FAQ in README.md](README.md#faq) - Common user questions
+
+4. **Get help:**
+   - Check [README.md](README.md) - Main documentation
+   - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+   - [GitHub Issues](https://github.com/your-org/tongyi-agent/issues) - Report bugs
+
 Happy coding with Tongyi CLI! 🚀

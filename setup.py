@@ -19,8 +19,8 @@ if os.path.exists(requirements_path):
         requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 setup(
-    name="tongyi-agent",
-    version="1.1.0",
+    name="tongyi-cli-interactive",
+    version="1.0.0-beta.1",
     description="Interactive CLI for Tongyi Agent with Claude SDK and OpenRouter integration",
     long_description=long_description or "Interactive CLI for Tongyi Agent",
     long_description_content_type="text/markdown",

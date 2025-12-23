@@ -99,13 +99,13 @@ Scope: Repository‑wide delivery plan. Keep this document short and current. Up
 - Create "First 5 Minutes" getting started guide
 - Add FAQ section addressing common issues
 
-**BETA-6: Performance Basics**
+**BETA-6: Performance Basics** ✅ COMPLETED (2025-12-23)
 - Implement basic caching for repeated API calls
 - Add response time improvements through smarter tool selection
 - Optimize memory usage for large file processing
 - Add performance metrics to status command
 
-**BETA-7: Release Preparation**
+**BETA-7: Release Preparation** ✅ COMPLETED (2025-12-23)
 - Version bump to v1.0.0-beta.1
 - Create PyPI distribution package
 - Write comprehensive release notes

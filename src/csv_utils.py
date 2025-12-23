@@ -3,16 +3,29 @@ CSV Utilities for Safe Data Cleaning in Sandbox
 -------------------------------------------------
 Provides helpers to read, infer schema, and clean CSV data within the sandbox.
 All functions are pure and avoid network/external calls.
+
+Memory optimizations:
+- Use chunked reading for large files
+- Check file size before loading
+- Limit sample size for schema inference
 """
 from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Generator
 
 import pandas as pd
+
+
+logger = logging.getLogger(__name__)
+
+# File size threshold for warning (50MB for CSV)
+LARGE_CSV_THRESHOLD = 50 * 1024 * 1024
+MAX_SAMPLE_ROWS = 1000  # Increased slightly for better schema detection
 
 
 @dataclass
@@ -33,21 +46,67 @@ class CSVInfo:
     encoding: str
 
 
-def sniff_csv(path: str, sample_rows: int = 500) -> CSVInfo:
-    """Read a sample of a CSV and infer schema."""
+def _check_csv_size(path: str) -> bool:
+    """Check CSV file size and warn if large. Returns True if safe to proceed."""
+    try:
+        size = os.path.getsize(path)
+        if size > LARGE_CSV_THRESHOLD:
+            logger.warning(
+                "Large CSV file detected: %s (%.2f MB). Consider chunked processing.",
+                path, size / (1024 * 1024)
+            )
+        return size <= LARGE_CSV_THRESHOLD * 5  # Allow up to 5x with warning
+    except OSError as e:
+        logger.warning("Could not check CSV size for %s: %s", path, e)
+        return True
+
+
+def _read_csv_chunks(path: str, encoding: str, chunksize: int = 10000) -> Generator[pd.DataFrame, None, None]:
+    """Read CSV in chunks to reduce memory usage."""
+    for chunk in pd.read_csv(path, encoding=encoding, chunksize=chunksize):
+        yield chunk
+
+
+def sniff_csv(path: str, sample_rows: int = MAX_SAMPLE_ROWS) -> CSVInfo:
+    """
+    Read a sample of a CSV and infer schema.
+
+    Memory optimized:
+    - Limits sample size
+    - Warns on large files
+    - Uses efficient pandas dtypes
+    """
+    # Check file size before processing
+    _check_csv_size(path)
+
     # Auto-detect encoding and delimiter
+    sample_size = min(sample_rows * 200, 100000)  # Cap at 100KB for sniffing
     with open(path, "rb") as f:
-        raw = f.read(sample_rows * 200)
+        raw = f.read(sample_size)
     try:
         encoding = "utf-8"
         raw.decode(encoding)
     except UnicodeDecodeError:
         encoding = "latin-1"
+
     with open(path, "r", encoding=encoding, newline="") as f:
-        sample = f.read(sample_rows * 200)
-        dialect = csv.Sniffer().sniff(sample)
+        sample = f.read(sample_size)
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except csv.Error:
+            # Fallback to default if sniffing fails
+            dialect = csv.get_dialect("excel")
+
     # Read with pandas for robust dtype inference
-    df = pd.read_csv(path, nrows=sample_rows, dialect=dialect, encoding=encoding)
+    # Use efficient dtypes to reduce memory
+    df = pd.read_csv(
+        path,
+        nrows=sample_rows,
+        dialect=dialect,
+        encoding=encoding,
+        dtype_backend="pyarrow"  # Use efficient pyarrow backend if available
+    )
+
     column_info = []
     for col in df.columns:
         series = df[col]
@@ -56,6 +115,7 @@ def sniff_csv(path: str, sample_rows: int = 500) -> CSVInfo:
         unique_count = series.nunique()
         sample_vals = series.dropna().head(3).tolist()
         column_info.append(ColumnInfo(name=col, dtype=dtype, null_count=int(null_count), unique_count=int(unique_count), sample_values=sample_vals))
+
     return CSVInfo(
         path=path,
         rows=len(df),

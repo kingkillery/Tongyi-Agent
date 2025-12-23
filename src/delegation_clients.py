@@ -17,10 +17,14 @@ from error_handler import (
     TimeoutError,
     get_api_unavailable_message,
     get_invalid_api_key_message,
+    get_model_unavailable_message,
     get_rate_limit_message,
     get_timeout_message,
     is_retryable_error,
 )
+
+# Import caching for API calls
+from cache import get_api_cache
 
 
 class AgentClientError(RuntimeError):
@@ -35,19 +39,29 @@ class OpenRouterClient:
     timeout: int = 120  # Increased timeout for complex reasoning
     max_retries: int = 3
     backoff_factor: float = 1.5
+    enable_cache: bool = True  # Enable caching for API responses
 
-    def chat(self, prompt: str, *, model: str, **params: Any) -> Any:
+    def chat(self, prompt: str, *, model: str, use_cache: Optional[bool] = None, **params: Any) -> Any:
         """
         Send a chat request to OpenRouter.
-        
+
         Args:
             prompt: Either a string prompt or a list of message dicts for multi-turn conversations
             model: Model identifier
+            use_cache: Override default cache behavior (optional)
             **params: Additional parameters (temperature, tools, etc.)
-        
+
         Returns:
             Response object with .choices[0].message or string content
         """
+        # Determine if caching should be used
+        should_cache = use_cache if use_cache is not None else self.enable_cache
+
+        # Skip caching for tool calls (stateful operations)
+        has_tools = "tools" in params or "tool_choice" in params
+        if has_tools:
+            should_cache = False
+
         # Handle both string prompts and full message arrays
         if isinstance(prompt, str):
             messages = [
@@ -59,13 +73,38 @@ class OpenRouterClient:
             messages = prompt
         else:
             raise ValueError(f"Invalid prompt type: {type(prompt)}")
-        
+
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages,
         }
         payload.update(params)
-        
+
+        # Try cache first if enabled
+        if should_cache and not has_tools:
+            cache = get_api_cache()
+            # Create cache key from model, messages, and key params
+            cache_params = {k: v for k, v in params.items() if k in ['temperature', 'top_p', 'max_tokens']}
+            cache_key = cache._make_key(model, messages, **cache_params)
+            cached_response = cache.get(cache_key)
+            if cached_response is not None:
+                # Return cached response in same format
+                if isinstance(cached_response, str):
+                    return cached_response
+                else:
+                    # Recreate Response object from cached data
+                    class Response:
+                        def __init__(self, data):
+                            self.data = data
+                            self.choices = data.get("choices", [])
+                            self.tool_calls = self.choices[0].get("message", {}).get("tool_calls") if self.choices else None
+
+                        def __str__(self):
+                            if self.choices:
+                                return self.choices[0].get("message", {}).get("content", "").strip()
+                            return ""
+                    return Response(cached_response)
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -76,21 +115,28 @@ class OpenRouterClient:
         choices = data.get("choices", [])
         if not choices:
             raise AgentClientError("OpenRouter returned no choices")
-        
+
+        # Cache the response if enabled
+        if should_cache and not has_tools:
+            cache = get_api_cache()
+            cache_params = {k: v for k, v in params.items() if k in ['temperature', 'top_p', 'max_tokens']}
+            cache_key = cache._make_key(model, messages, **cache_params)
+            cache.set(cache_key, data)
+
         # Return full response object if tools were used, otherwise return content string
-        if "tools" in params or "tool_choice" in params:
+        if has_tools:
             # Return a simple object with the response structure
             class Response:
                 def __init__(self, data):
                     self.data = data
                     self.choices = data.get("choices", [])
                     self.tool_calls = self.choices[0].get("message", {}).get("tool_calls") if self.choices else None
-                
+
                 def __str__(self):
                     if self.choices:
                         return self.choices[0].get("message", {}).get("content", "").strip()
                     return ""
-            
+
             return Response(data)
         else:
             # Simple string response for backward compatibility

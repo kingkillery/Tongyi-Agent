@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tongyi-cli-interactive"
-version = "0.1.0"
+version = "1.0.0-beta.1"
 description = "Interactive CLI for Tongyi Agent - Modern terminal interface with rich UI, session management, and tool integration"
 readme = "README.md"
 requires-python = ">=3.11"
